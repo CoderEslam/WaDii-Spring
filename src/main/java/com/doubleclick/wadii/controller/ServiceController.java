@@ -1,0 +1,83 @@
+package com.doubleclick.wadii.controller;
+
+import com.doubleclick.wadii.dto.ServicesDto;
+import com.doubleclick.wadii.entities.Service;
+import com.doubleclick.wadii.repository.ServiceRepository;
+import com.doubleclick.wadii.ts.Controller;
+import com.doubleclick.wadii.utils.Response;
+import com.doubleclick.wadii.utils.ResponseType;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.Optional;
+
+@RequiredArgsConstructor
+@RestController
+@RequestMapping("/services")
+public class ServiceController extends Controller<Service, ServicesDto, Long> {
+
+    private final ServiceRepository serviceRepository;
+
+
+    @Override
+    public ResponseEntity<Response<Service>> show(Long id) {
+        return serviceRepository.findById(id)
+                .map(service -> Response.response(service, "Done", ResponseType.SUCCESS))
+                .orElseGet(() -> Response.response(null, "there is no service with this id : " + id, ResponseType.NOT_FOUND));
+    }
+
+    @Override
+    public ResponseEntity<Response<Service>> insert(Authentication authentication, ServicesDto servicesDto) {
+        if (servicesDto.isNotEmpty()) {
+            Optional<Service> serviceOptional = serviceRepository.findByName(servicesDto.getName());
+            if (serviceOptional.isEmpty()) {
+                Service service = new Service();
+                service.setName(servicesDto.getName());
+                service = serviceRepository.save(service);
+                return Response.response(service, "Service saved successfully", ResponseType.SUCCESS);
+            } else {
+                return Response.response(null, "there is a service with this name : " + servicesDto.getName(), ResponseType.NOT_FOUND);
+            }
+        } else {
+            return Response.response(null, "name is empty", ResponseType.ERROR);
+        }
+    }
+
+    @Override
+    public ResponseEntity<Response<Service>> update(ServicesDto servicesDto) {
+        if (servicesDto.isNotEmpty()) {
+            Optional<Service> serviceOptional = serviceRepository.findById(servicesDto.getId());
+            if (serviceOptional.isPresent()) {
+                Service service = serviceOptional.get();
+                service.setId(servicesDto.getId());
+                service.setName(servicesDto.getName());
+                service = serviceRepository.save(service);
+                return Response.response(service, "Service updated successfully", ResponseType.SUCCESS);
+            } else {
+                return Response.response(null, "there is a service with this name : " + servicesDto.getName(), ResponseType.NOT_FOUND);
+            }
+        } else {
+            return Response.response(null, "name is empty", ResponseType.ERROR);
+        }
+    }
+
+    @Override
+    public ResponseEntity<Response<Service>> delete(Long id) {
+        Optional<Service> serviceOptional = serviceRepository.findById(id);
+        if (serviceOptional.isPresent()) {
+            serviceRepository.deleteById(id);
+            return Response.response(null, "service deleted successfully", ResponseType.SUCCESS);
+        } else {
+            return Response.response(null, "there is no service with this id : " + id, ResponseType.NOT_FOUND);
+        }
+    }
+
+    @Override
+    public ResponseEntity<Response<List<Service>>> readAll() {
+        return Response.response(serviceRepository.findAll(), "All services", ResponseType.SUCCESS);
+    }
+}

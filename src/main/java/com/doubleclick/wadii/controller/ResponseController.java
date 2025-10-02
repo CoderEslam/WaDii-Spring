@@ -1,0 +1,112 @@
+package com.doubleclick.wadii.controller;
+
+import com.doubleclick.wadii.dto.ResponseDto;
+import com.doubleclick.wadii.dto.SparePartsPriceDto;
+import com.doubleclick.wadii.entities.Provider;
+import com.doubleclick.wadii.entities.Responses;
+import com.doubleclick.wadii.entities.SpareParts;
+import com.doubleclick.wadii.entities.SparePartsPrice;
+import com.doubleclick.wadii.repository.ProviderRepository;
+import com.doubleclick.wadii.repository.ResponseRepository;
+import com.doubleclick.wadii.repository.SparePartsPriceRepository;
+import com.doubleclick.wadii.ts.Controller;
+import com.doubleclick.wadii.utils.Response;
+import com.doubleclick.wadii.utils.ResponseType;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+
+@RequiredArgsConstructor
+@RestController
+@RequestMapping("/responses")
+
+public class ResponseController extends Controller<Responses, ResponseDto, Long> {
+
+    private final ResponseRepository responseRepository;
+    private final ProviderRepository providerRepository;
+    private final SparePartsPriceRepository sparePartsPriceRepository;
+    private final OrderController orderController;
+
+    @Override
+    public ResponseEntity<Response<Responses>> show(Long id) {
+        return responseRepository.findById(id)
+                .map(responses -> Response.response(responses, "Done", ResponseType.SUCCESS))
+                .orElseGet(() -> Response.response(null, "there is no response with this id : " + id, ResponseType.NOT_FOUND));
+    }
+
+    @Override
+    public ResponseEntity<Response<Responses>> insert(Authentication authentication, ResponseDto responseDto) {
+        if (responseDto.isNotEmpty()) {
+            Optional<Provider> providerOptional = providerRepository.findById(responseDto.getProviderId());
+            if (providerOptional.isPresent()) {
+                Responses responses = new Responses();
+                responses.setId(responseDto.getId());
+                responses.setComment(responseDto.getComment());
+                responses.setProvider(providerOptional.get());
+                responses.setOrder(Objects.requireNonNull(orderController.show(responseDto.getOrderId()).getBody()).getData());
+                responses = responseRepository.save(responses);
+                if (responseDto.getSparePartsPrice() != null && !responseDto.getSparePartsPrice().isEmpty()) {
+                    for (SparePartsPriceDto sparePartsPriceDto : responseDto.getSparePartsPrice()) {
+                        SparePartsPrice sparePartsPrice = new SparePartsPrice();
+                        sparePartsPrice.setResponse(responses);
+                        sparePartsPrice.setPrice(sparePartsPriceDto.getPrice());
+                        sparePartsPrice.setSparePart(new SpareParts(sparePartsPriceDto.getId()));
+                        sparePartsPrice = sparePartsPriceRepository.save(sparePartsPrice);
+                    }
+                }
+                return Response.response(responses, "Response saved successfully", ResponseType.SUCCESS);
+            } else {
+                return Response.response(null, "there is no provider with this id : " + responseDto.getProviderId(), ResponseType.NOT_FOUND);
+            }
+        } else {
+            return Response.response(null, "name is empty", ResponseType.ERROR);
+        }
+    }
+
+    @Override
+    public ResponseEntity<Response<Responses>> update(ResponseDto responseDto) {
+//        if (linksDto.isNotEmpty()) {
+//            Optional<Provider> providerOptional = providerRepository.findById(linksDto.getProviderId());
+//            if (providerOptional.isPresent()) {
+//                Optional<Links> linkOptional = linksRepository.findById(linksDto.getId());
+//                if (linkOptional.isPresent()) {
+//                    Links link = linkOptional.get();
+//                    link.setId(link.getId());
+//                    link.setLink(linksDto.getLink());
+//                    link.setProvider(providerOptional.get());
+//                    link = linksRepository.save(link);
+//                    return Response.response(link, "Link updated successfully", ResponseType.SUCCESS);
+//                } else {
+//                    return Response.response(null, "there is no link with this id : " + linksDto.getId(), ResponseType.NOT_FOUND);
+//                }
+//            } else {
+//                return Response.response(null, "there is no provider with this id : " + linksDto.getProviderId(), ResponseType.NOT_FOUND);
+//            }
+//        } else {
+//            return Response.response(null, "name is empty", ResponseType.ERROR);
+//        }
+        return null;
+    }
+
+    @Override
+    public ResponseEntity<Response<Responses>> delete(Long id) {
+        Optional<Responses> cityOptional = responseRepository.findById(id);
+        if (cityOptional.isPresent()) {
+            responseRepository.deleteById(id);
+            return Response.response(null, "response deleted successfully", ResponseType.SUCCESS);
+        } else {
+            return Response.response(null, "there is no response with this id : " + id, ResponseType.NOT_FOUND);
+        }
+    }
+
+    @Override
+    public ResponseEntity<Response<List<Responses>>> readAll() {
+        return Response.response(responseRepository.findAll(), "All responses", ResponseType.SUCCESS);
+    }
+}
