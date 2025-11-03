@@ -11,6 +11,8 @@ import com.doubleclick.wadii.utils.ResponseType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -92,5 +94,10 @@ public class WorkTimeController extends Controller<WorkTime, WorkTimeDto, Long> 
     @Override
     public ResponseEntity<Response<List<WorkTime>>> readAll() {
         return Response.response(workTimeRepository.findAll(), "All times", ResponseType.SUCCESS);
+    }
+
+    @PostMapping("/get-all-work-time/{id}")
+    public ResponseEntity<Response<List<WorkTime>>> getWorkTimeOfProviderById(@PathVariable Long id) {
+        return Response.response(workTimeRepository.findAllByProviderId(id), "All times", ResponseType.SUCCESS);
     }
 }

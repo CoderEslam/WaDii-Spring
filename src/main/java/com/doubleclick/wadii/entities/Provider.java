@@ -45,13 +45,13 @@ public class Provider {
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "provider", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Offer> offers;
 
-    @OneToMany
-    @JsonIgnore
-    private List<Follower> followers;
+    @OneToMany(mappedBy = "provider", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnoreProperties("provider")
+    private List<Follower> followers; // <-- providers followed by users
 
     @OneToOne
     @JoinColumn(name = "user_id", nullable = false)
-    @JsonIgnoreProperties("user") // Prevents recursive fetching
+    @JsonIgnoreProperties("provider") // Prevents recursive fetching
     private User user;
 
     @OneToMany

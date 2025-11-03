@@ -1,9 +1,14 @@
 package com.doubleclick.wadii.controller;
 
+import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.auth.repository.UserRepository;
+import com.doubleclick.wadii.dto.ProviderDto;
 import com.doubleclick.wadii.dto.ServicesProviderDto;
+import com.doubleclick.wadii.entities.Follower;
+import com.doubleclick.wadii.entities.FollowerId;
 import com.doubleclick.wadii.entities.Provider;
 import com.doubleclick.wadii.entities.Service;
+import com.doubleclick.wadii.repository.FollowersRepository;
 import com.doubleclick.wadii.repository.ProviderRepository;
 import com.doubleclick.wadii.repository.ServiceRepository;
 import com.doubleclick.wadii.ts.Controller;
@@ -13,22 +18,21 @@ import com.google.gson.JsonObject;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
+import javax.lang.model.type.ErrorType;
 import java.util.List;
 import java.util.Optional;
 
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/providers")
-public class ProviderController extends Controller<Provider, JsonObject, Long> {
+public class ProviderController extends Controller<Provider, ProviderDto, Long> {
 
     private final UserRepository userRepository;
     private final ProviderRepository providerRepository;
     private final ServiceRepository serviceRepository;
+    private final FollowersRepository followersRepository;
 
     @Override
     public ResponseEntity<Response<Provider>> show(Long id) {
@@ -38,49 +42,22 @@ public class ProviderController extends Controller<Provider, JsonObject, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Provider>> insert(Authentication authentication, JsonObject cityDto) {
-//        if (cityDto.isNotEmpty()) {
-//            Optional<Province> provinceOptional = provinceRepository.findById(cityDto.getProvinceId());
-//            if (provinceOptional.isPresent()) {
-//                City city = new City();
-//                city.setName(cityDto.getName());
-//                city.setProvince(provinceOptional.get());
-//                city = cityRepository.save(city);
-//                return Response.response(city, "City saved successfully", ErrorType.SUCCESS);
-//            } else {
-//                return Response.response(null, "there is no province with this id : " + cityDto.getProvinceId(), ErrorType.NOT_FOUND);
-//            }
-//        } else {
-//            return Response.response(null, "name or province id is empty", ErrorType.ERROR);
-//        }
-        return null;
+    public ResponseEntity<Response<Provider>> insert(Authentication authentication, ProviderDto providerDto) {
+        Optional<User> userOptional = userRepository.findById(providerDto.getUserId());
+        if (userOptional.isPresent()) {
+            Provider provider = new Provider();
+            provider.setUser(userOptional.get());
+            provider.setFollowersCount(0L);
+            provider.setRate(0.0);
+            provider = providerRepository.save(provider);
+            return Response.response(provider, "provider saved successfully", ResponseType.SUCCESS);
+        } else {
+            return Response.response(null, "there is no user with this id : " + providerDto.getUserId(), ResponseType.NOT_FOUND);
+        }
     }
 
     @Override
-    public ResponseEntity<Response<Provider>> update(JsonObject cityDto) {
-//        if (cityDto.isNotEmpty()) {
-//            Optional<Province> provinceOptional = provinceRepository.findById(cityDto.getProvinceId());
-//            if (provinceOptional.isPresent()) {
-//                if (cityDto.getId() != null) {
-//                    Optional<City> cityOptional = cityRepository.findById(cityDto.getId());
-//                    if (cityOptional.isPresent()) {
-//                        City city = cityOptional.get();
-//                        city.setName(cityDto.getName());
-//                        city.setProvince(provinceOptional.get());
-//                        city = cityRepository.save(city);
-//                        return Response.response(city, "City saved successfully", ErrorType.SUCCESS);
-//                    } else {
-//                        return Response.response(null, "there is no city with this id : " + cityDto.getId(), ErrorType.NOT_FOUND);
-//                    }
-//                } else {
-//                    return Response.response(null, "city id not found", ErrorType.NOT_FOUND);
-//                }
-//            } else {
-//                return Response.response(null, "there is no province with this id : " + cityDto.getProvinceId(), ErrorType.NOT_FOUND);
-//            }
-//        } else {
-//            return Response.response(null, "name or province id is empty", ErrorType.ERROR);
-//        }
+    public ResponseEntity<Response<Provider>> update(ProviderDto providerDto) {
         return null;
     }
 
@@ -134,6 +111,31 @@ public class ProviderController extends Controller<Provider, JsonObject, Long> {
             return Response.response(provider, "Services updated successfully", ResponseType.SUCCESS);
         } else {
             return Response.response(null, "No provider found with id: " + servicesProviderDto.getProviderId(), ResponseType.NOT_FOUND);
+        }
+    }
+
+    @PostMapping("/follow-provider/{id}")
+    public ResponseEntity<Response<Follower>> follow(Authentication authentication, @PathVariable Long id) {
+        Optional<Provider> providerOptional = providerRepository.findById(id);
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isPresent()) {
+            if (providerOptional.isPresent()) {
+                Provider provider = providerOptional.get();
+                Long count = provider.getFollowersCount();
+                provider.setFollowersCount(++count);
+                Follower follower = new Follower();
+                FollowerId followerId = new FollowerId(userOptional.get().getId(), id);
+                follower.setId(followerId);
+                follower.setProvider(provider);
+                follower.setUser(userOptional.get());
+                follower = followersRepository.save(follower);
+                provider = providerRepository.save(provider);
+                return Response.response(follower, "Done", ResponseType.SUCCESS);
+            } else {
+                return Response.response(null, "provider id not exist", ResponseType.SUCCESS);
+            }
+        } else {
+            return Response.response(null, "user id not exist", ResponseType.SUCCESS);
         }
     }
 }

@@ -41,11 +41,12 @@ public class User {
     @JsonIgnore
     private List<Rate> rates;
 
-    @OneToMany
-    @JsonIgnore
-    private List<Follower> following;
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnoreProperties("user")
+    private List<Follower> following; // <-- users following providers
 
     @OneToOne
+    @JsonIgnoreProperties("user") // Prevents recursive fetching
     private Provider provider;
 
 
@@ -57,7 +58,4 @@ public class User {
     @JsonIgnoreProperties("user") // Prevents recursive fetching
     private List<Order> orders;
 
-//    @ManyToOne
-//    @JoinColumn(name = "language_id", nullable = false)
-//    private Language language;
 }

@@ -1,6 +1,8 @@
 package com.doubleclick.wadii.entities;
 
 import com.doubleclick.wadii.auth.model.User;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -15,19 +17,20 @@ import lombok.Setter;
 @NoArgsConstructor
 public class Follower {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-    private String numbers;
+    @EmbeddedId
+    private FollowerId id;
 
-
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
+    @MapsId("userId") // maps this field to userId in FollowerId
     @JoinColumn(name = "user_id", nullable = false)
+    @JsonIgnoreProperties({"following", "provider", "orders", "rates"})
     private User user;
 
-
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
+    @MapsId("providerId") // maps this field to providerId in FollowerId
     @JoinColumn(name = "provider_id", nullable = false)
+    @JsonIgnoreProperties({"followers", "workTimes", "services", "offers", "rates", "links"})
     private Provider provider;
+
 
 }

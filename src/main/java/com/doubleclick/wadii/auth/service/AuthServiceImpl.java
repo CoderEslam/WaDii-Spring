@@ -52,6 +52,8 @@ public class AuthServiceImpl implements AuthService {
         if (authRequest.getUserType() == 1) {
             Provider provider = new Provider();
             provider.setUser(user);
+            provider.setFollowersCount(0L);
+            provider.setRate(0.0);
             provider = providerRepository.save(provider);
             return Response.response(user, "provider registered successfully", ResponseType.SUCCESS);
         }
