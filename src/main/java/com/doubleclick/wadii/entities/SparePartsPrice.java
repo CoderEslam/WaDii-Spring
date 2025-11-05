@@ -1,6 +1,7 @@
 package com.doubleclick.wadii.entities;
 
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -21,12 +22,16 @@ public class SparePartsPrice {
     private Double price;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "response_id", nullable = false)
-    private Responses response;
+    @JoinColumn(name = "spare_part_id", nullable = false)
+    @JsonIgnoreProperties({"sparePartsPrices", "hibernateLazyInitializer", "handler"})
+    private SpareParts sparePart;
 
+    @ManyToOne
+    private Provider provider;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "spare_part_id", nullable = false)
-    private SpareParts sparePart;
+    @JoinColumn(name = "response_id")
+    @JsonIgnoreProperties({"sparePartsPrices", "hibernateLazyInitializer", "handler"})
+    private Responses response;
 
 }

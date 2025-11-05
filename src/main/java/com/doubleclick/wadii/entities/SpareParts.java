@@ -26,11 +26,11 @@ public class SpareParts {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "order_id", nullable = false)
-    @JsonIgnoreProperties("spareParts") // Prevents recursive fetching
+    @JsonIgnoreProperties({"spareParts", "hibernateLazyInitializer", "handler"})
     private Order order;
 
-    @OneToMany(mappedBy = "sparePart", cascade = CascadeType.ALL, orphanRemoval = true)
-    @JsonIgnoreProperties("sparePart")
+    @OneToMany(mappedBy = "sparePart",fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnoreProperties({"sparePart", "response", "hibernateLazyInitializer", "handler"})
     private List<SparePartsPrice> sparePartsPrices;
 
 

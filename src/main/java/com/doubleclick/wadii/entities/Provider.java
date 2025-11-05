@@ -32,7 +32,7 @@ public class Provider {
     private List<WorkTime> workTimes;
 
     @ManyToMany(mappedBy = "providers")
-    @JsonIgnoreProperties("providers") // Prevents recursive fetching
+    @JsonIgnoreProperties({"providers", "orders"}) // Hide orders from services inside provider
     private List<Service> services;
 
     @OneToMany
@@ -43,6 +43,7 @@ public class Provider {
     private List<Links> links;
 
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "provider", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnoreProperties("provider") // Prevents recursive fetching
     private List<Offer> offers;
 
     @OneToMany(mappedBy = "provider", cascade = CascadeType.ALL, orphanRemoval = true)

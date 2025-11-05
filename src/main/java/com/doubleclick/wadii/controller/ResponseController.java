@@ -3,6 +3,7 @@ package com.doubleclick.wadii.controller;
 import com.doubleclick.wadii.dto.ResponseDto;
 import com.doubleclick.wadii.dto.SparePartsPriceDto;
 import com.doubleclick.wadii.entities.*;
+import com.doubleclick.wadii.repository.OrderRepository;
 import com.doubleclick.wadii.repository.ProviderRepository;
 import com.doubleclick.wadii.repository.ResponseRepository;
 import com.doubleclick.wadii.repository.SparePartsPriceRepository;
@@ -12,8 +13,6 @@ import com.doubleclick.wadii.utils.ResponseType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -30,7 +29,7 @@ public class ResponseController extends Controller<Responses, ResponseDto, Long>
     private final ResponseRepository responseRepository;
     private final ProviderRepository providerRepository;
     private final SparePartsPriceRepository sparePartsPriceRepository;
-    private final OrderController orderController;
+    private final OrderRepository orderRepository;
 
     @Override
     public ResponseEntity<Response<Responses>> show(Long id) {
@@ -39,32 +38,63 @@ public class ResponseController extends Controller<Responses, ResponseDto, Long>
                 .orElseGet(() -> Response.response(null, "there is no response with this id : " + id, ResponseType.NOT_FOUND));
     }
 
+    //    @Override
+//    public ResponseEntity<Response<Responses>> insert(Authentication authentication, ResponseDto responseDto) {
+//        if (responseDto.isNotEmpty()) {
+//            Optional<Provider> providerOptional = providerRepository.findById(responseDto.getProviderId());
+//            if (providerOptional.isPresent()) {
+//                Responses responses = new Responses();
+//                responses.setId(responseDto.getId());
+//                responses.setComment(responseDto.getComment());
+//                responses.setProvider(providerOptional.get());
+//                responses.setOrder(Objects.requireNonNull(orderController.show(responseDto.getOrderId()).getBody()).getData());
+//                responses = responseRepository.save(responses);
+//                if (responseDto.getSparePartsPrice() != null && !responseDto.getSparePartsPrice().isEmpty()) {
+//                    for (SparePartsPriceDto sparePartsPriceDto : responseDto.getSparePartsPrice()) {
+//                        SparePartsPrice sparePartsPrice = new SparePartsPrice();
+//                        sparePartsPrice.setResponse(responses);
+//                        sparePartsPrice.setPrice(sparePartsPriceDto.getPrice());
+//                        sparePartsPrice.setSparePart(new SpareParts(sparePartsPriceDto.getId()));
+//                        sparePartsPrice = sparePartsPriceRepository.save(sparePartsPrice);
+//                    }
+//                }
+//                return Response.response(responses, "Response saved successfully", ResponseType.SUCCESS);
+//            } else {
+//                return Response.response(null, "there is no provider with this id : " + responseDto.getProviderId(), ResponseType.NOT_FOUND);
+//            }
+//        } else {
+//            return Response.response(null, "name is empty", ResponseType.ERROR);
+//        }
+//    }
     @Override
     public ResponseEntity<Response<Responses>> insert(Authentication authentication, ResponseDto responseDto) {
         if (responseDto.isNotEmpty()) {
-            Optional<Provider> providerOptional = providerRepository.findById(responseDto.getProviderId());
-            if (providerOptional.isPresent()) {
-                Responses responses = new Responses();
-                responses.setId(responseDto.getId());
-                responses.setComment(responseDto.getComment());
-                responses.setProvider(providerOptional.get());
-                responses.setOrder(Objects.requireNonNull(orderController.show(responseDto.getOrderId()).getBody()).getData());
-                responses = responseRepository.save(responses);
-                if (responseDto.getSparePartsPrice() != null && !responseDto.getSparePartsPrice().isEmpty()) {
-                    for (SparePartsPriceDto sparePartsPriceDto : responseDto.getSparePartsPrice()) {
-                        SparePartsPrice sparePartsPrice = new SparePartsPrice();
-                        sparePartsPrice.setResponse(responses);
-                        sparePartsPrice.setPrice(sparePartsPriceDto.getPrice());
-                        sparePartsPrice.setSparePart(new SpareParts(sparePartsPriceDto.getId()));
-                        sparePartsPrice = sparePartsPriceRepository.save(sparePartsPrice);
-                    }
+            Provider provider = providerRepository.findById(responseDto.getProviderId())
+                    .orElseThrow(() -> new RuntimeException("No provider with id: " + responseDto.getProviderId()));
+
+            Order order = orderRepository.findById(responseDto.getOrderId())
+                    .orElseThrow(() -> new RuntimeException("No order with id: " + responseDto.getOrderId()));
+
+            Responses responses = new Responses();
+            responses.setComment(responseDto.getComment());
+            responses.setProvider(provider);
+            responses.setOrder(order);
+
+            responses = responseRepository.save(responses);
+
+            List<SparePartsPriceDto> priceDtos = responseDto.getSparePartsPrice();
+            if (priceDtos != null && !priceDtos.isEmpty()) {
+                for (SparePartsPriceDto sparePartsPriceDto : priceDtos) {
+                    SparePartsPrice sparePartsPrice = new SparePartsPrice();
+                    sparePartsPrice.setResponse(responses);
+                    sparePartsPrice.setPrice(sparePartsPriceDto.getPrice());
+                    sparePartsPrice.setSparePart(new SpareParts(sparePartsPriceDto.getId()));
+                    sparePartsPriceRepository.save(sparePartsPrice);
                 }
-                return Response.response(responses, "Response saved successfully", ResponseType.SUCCESS);
-            } else {
-                return Response.response(null, "there is no provider with this id : " + responseDto.getProviderId(), ResponseType.NOT_FOUND);
             }
+            return Response.response(responses, "Response saved successfully", ResponseType.SUCCESS);
         } else {
-            return Response.response(null, "name is empty", ResponseType.ERROR);
+            return Response.response(null, "Invalid input data", ResponseType.ERROR);
         }
     }
 

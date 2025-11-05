@@ -37,11 +37,16 @@ public class LinksController extends Controller<Links, LinksDto, Long> {
         if (linksDto.isNotEmpty()) {
             Optional<Provider> providerOptional = providerRepository.findById(linksDto.getProviderId());
             if (providerOptional.isPresent()) {
-                Links link = new Links();
-                link.setLink(linksDto.getLink());
-                link.setProvider(providerOptional.get());
-                link = linksRepository.save(link);
-                return Response.response(link, "Link saved successfully", ResponseType.SUCCESS);
+                Optional<Links> linksOptional = linksRepository.findByLink(linksDto.getLink());
+                if (linksOptional.isEmpty()) {
+                    Links link = new Links();
+                    link.setLink(linksDto.getLink());
+                    link.setProvider(providerOptional.get());
+                    link = linksRepository.save(link);
+                    return Response.response(link, "Link saved successfully", ResponseType.SUCCESS);
+                } else {
+                    return Response.response(null, "this link is already exist : " + linksDto.getLink(), ResponseType.ERROR);
+                }
             } else {
                 return Response.response(null, "there is no provider with this id : " + linksDto.getProviderId(), ResponseType.NOT_FOUND);
             }

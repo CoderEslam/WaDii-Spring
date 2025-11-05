@@ -55,7 +55,7 @@ public class User {
     }
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
-    @JsonIgnoreProperties("user") // Prevents recursive fetching
+    @JsonIgnoreProperties({"user", "hibernateLazyInitializer", "handler"}) // Prevents recursive fetching
     private List<Order> orders;
 
 }

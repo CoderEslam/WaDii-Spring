@@ -31,21 +31,22 @@ public class Order {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
-    @JsonIgnore
-//    @JsonIgnoreProperties("orders") // Prevents recursive fetching
+//    @JsonIgnore
+    @JsonIgnoreProperties({"orders", "hibernateLazyInitializer", "handler"}) // Prevents recursive fetching
     private User user;
 
     @ManyToMany(mappedBy = "orders", fetch = FetchType.LAZY)
-    @JsonIgnoreProperties(value = {"orders", "providers"}) // Prevents recursive fetching
+    @JsonIgnoreProperties({"orders", "providers", "hibernateLazyInitializer", "handler"})
     private List<Service> services;
 
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
-    @JsonIgnoreProperties("order") // Prevents recursive fetching
+    @JsonIgnoreProperties({"order", "hibernateLazyInitializer", "handler"})
     private List<SpareParts> spareParts;
 
 
-    @OneToMany
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnoreProperties({"order", "hibernateLazyInitializer", "handler"})
     private List<Responses> responses;
 
 }

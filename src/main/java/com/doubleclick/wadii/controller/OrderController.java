@@ -16,10 +16,12 @@ import com.doubleclick.wadii.utils.ResponseType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -42,8 +44,6 @@ public class OrderController extends Controller<Order, OrderDto, Long> {
 
     @Override
     public ResponseEntity<Response<Order>> insert(Authentication authentication, OrderDto orderDto) {
-        List<SpareParts> sparePartsList = new ArrayList<>();
-
         Optional<User> userOptional = userRepository.findById(orderDto.getUserId());
         System.out.println(userOptional.get());
         List<Service> services = serviceRepository.findAllById(orderDto.getServicesIds());
@@ -58,7 +58,7 @@ public class OrderController extends Controller<Order, OrderDto, Long> {
         for (SparePartsDto sparePartsDto : orderDto.getSpareParts()) {
             SpareParts spareParts = new SpareParts();
             spareParts.setSparePartName(sparePartsDto.getSparePartName());
-            spareParts.setOrder(order);
+//            spareParts.setOrder(order);
             sparePartsRepository.save(spareParts);
         }
         for (Service service : services) {
@@ -94,5 +94,20 @@ public class OrderController extends Controller<Order, OrderDto, Long> {
     @Override
     public ResponseEntity<Response<List<Order>>> readAll() {
         return Response.response(orderRepository.findAll(), "All orders", ResponseType.SUCCESS);
+    }
+
+    @GetMapping("/show-all-order-of-user")
+    public ResponseEntity<Response<List<Order>>> getOrdersByUserId(Authentication authentication) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isPresent()) {
+            Optional<List<Order>> orderList = orderRepository.findOrderByUserId(userOptional.get().getId());
+            if (orderList.isPresent()) {
+                return Response.response(orderList.get(), "All orders", ResponseType.SUCCESS);
+            } else {
+                return Response.response(Collections.emptyList(), "There is no orders there", ResponseType.SUCCESS);
+            }
+        } else {
+            return Response.response(null, "this user is not exist", ResponseType.NOT_FOUND);
+        }
     }
 }

@@ -1,5 +1,6 @@
 package com.doubleclick.wadii.entities;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -38,7 +39,8 @@ public class Service {
             joinColumns = @JoinColumn(name = "service_id"),
             inverseJoinColumns = @JoinColumn(name = "order_id")
     )
-    @JsonIgnoreProperties("services") // Prevents recursive fetching
+//    @JsonIgnoreProperties("services") // Prevents recursive fetching
+    @JsonIgnore // ❌ Never include orders in Service responses
     private List<Order> orders;
 
 
