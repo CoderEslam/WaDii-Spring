@@ -26,8 +26,6 @@ public class SparePartsPrice {
     @JsonIgnoreProperties({"sparePartsPrices", "hibernateLazyInitializer", "handler"})
     private SpareParts sparePart;
 
-    @ManyToOne
-    private Provider provider;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "response_id")

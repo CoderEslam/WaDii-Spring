@@ -13,12 +13,12 @@ import com.doubleclick.wadii.utils.ResponseType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @RestController
@@ -79,18 +79,21 @@ public class ResponseController extends Controller<Responses, ResponseDto, Long>
             responses.setComment(responseDto.getComment());
             responses.setProvider(provider);
             responses.setOrder(order);
-
             responses = responseRepository.save(responses);
 
             List<SparePartsPriceDto> priceDtos = responseDto.getSparePartsPrice();
             if (priceDtos != null && !priceDtos.isEmpty()) {
+                List<SparePartsPrice> sparePartsPriceList = new ArrayList<>();
                 for (SparePartsPriceDto sparePartsPriceDto : priceDtos) {
                     SparePartsPrice sparePartsPrice = new SparePartsPrice();
                     sparePartsPrice.setResponse(responses);
                     sparePartsPrice.setPrice(sparePartsPriceDto.getPrice());
                     sparePartsPrice.setSparePart(new SpareParts(sparePartsPriceDto.getId()));
-                    sparePartsPriceRepository.save(sparePartsPrice);
+                    sparePartsPriceList.add(sparePartsPrice);
                 }
+                sparePartsPriceList = sparePartsPriceRepository.saveAll(sparePartsPriceList);
+                responses.setSparePartsPrices(sparePartsPriceList);
+                responses = responseRepository.save(responses);
             }
             return Response.response(responses, "Response saved successfully", ResponseType.SUCCESS);
         } else {

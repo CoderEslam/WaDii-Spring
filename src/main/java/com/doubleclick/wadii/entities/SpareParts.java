@@ -29,9 +29,9 @@ public class SpareParts {
     @JsonIgnoreProperties({"spareParts", "hibernateLazyInitializer", "handler"})
     private Order order;
 
-    @OneToMany(mappedBy = "sparePart",fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
-    @JsonIgnoreProperties({"sparePart", "response", "hibernateLazyInitializer", "handler"})
-    private List<SparePartsPrice> sparePartsPrices;
+//    @OneToMany(mappedBy = "sparePart",fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+//    @JsonIgnoreProperties({"sparePart", "response", "hibernateLazyInitializer", "handler"})
+//    private List<SparePartsPrice> sparePartsPrices;
 
 
     public SpareParts(Long id) {
