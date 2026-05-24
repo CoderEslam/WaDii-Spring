@@ -13,9 +13,7 @@ import com.doubleclick.wadii.utils.ResponseType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -67,7 +65,7 @@ public class ResponseController extends Controller<Responses, ResponseDto, Long>
 //        }
 //    }
     @Override
-    public ResponseEntity<Response<Responses>> insert(Authentication authentication, ResponseDto responseDto) {
+    public ResponseEntity<Response<Responses>> insert(Authentication authentication, @RequestBody ResponseDto responseDto) {
         if (responseDto.isNotEmpty()) {
             Provider provider = providerRepository.findById(responseDto.getProviderId())
                     .orElseThrow(() -> new RuntimeException("No provider with id: " + responseDto.getProviderId()));

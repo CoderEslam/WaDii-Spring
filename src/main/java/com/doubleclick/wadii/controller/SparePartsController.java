@@ -9,8 +9,7 @@ import com.doubleclick.wadii.utils.ResponseType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Optional;
@@ -30,7 +29,7 @@ public class SparePartsController extends Controller<SpareParts, SparePartsDto, 
     }
 
     @Override
-    public ResponseEntity<Response<SpareParts>> insert(Authentication authentication, SparePartsDto sparePartsDto) {
+    public ResponseEntity<Response<SpareParts>> insert(Authentication authentication, @RequestBody SparePartsDto sparePartsDto) {
         if (sparePartsDto.isNotEmpty()) {
             SpareParts spareParts = new SpareParts();
             spareParts.setSparePartName(sparePartsDto.getSparePartName());

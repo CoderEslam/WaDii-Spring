@@ -1,6 +1,7 @@
 package com.doubleclick.wadii.entities;
 
 import com.doubleclick.wadii.auth.model.User;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -24,11 +25,13 @@ public class Rate {
 
     @ManyToOne
     @JoinColumn(name = "provider_id", nullable = false)
+    @JsonIgnoreProperties({"rates", "responses", "workTimes", "followers", "offers", "links", "services"})
     private Provider provider;
 
 
     @ManyToOne
     @JoinColumn(name = "user_id", nullable = false)
+    @JsonIgnoreProperties({"rates", "orders", "following", "provider"})
     private User user;
 //    @ManyToOne
 //    @JoinColumn(name = "province_id", nullable = false)

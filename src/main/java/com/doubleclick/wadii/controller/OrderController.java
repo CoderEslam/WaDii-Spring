@@ -16,9 +16,7 @@ import com.doubleclick.wadii.utils.ResponseType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -43,11 +41,9 @@ public class OrderController extends Controller<Order, OrderDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Order>> insert(Authentication authentication, OrderDto orderDto) {
+    public ResponseEntity<Response<Order>> insert(Authentication authentication, @RequestBody OrderDto orderDto) {
         Optional<User> userOptional = userRepository.findById(orderDto.getUserId());
-        System.out.println(userOptional.get());
         List<Service> services = serviceRepository.findAllById(orderDto.getServicesIds());
-        System.out.println(services);
         Order order = new Order();
         order.setDate(orderDto.getDate());
         order.setUser(userOptional.get());
@@ -58,7 +54,7 @@ public class OrderController extends Controller<Order, OrderDto, Long> {
         for (SparePartsDto sparePartsDto : orderDto.getSpareParts()) {
             SpareParts spareParts = new SpareParts();
             spareParts.setSparePartName(sparePartsDto.getSparePartName());
-//            spareParts.setOrder(order);
+            spareParts.setOrder(order);
             sparePartsRepository.save(spareParts);
         }
         for (Service service : services) {

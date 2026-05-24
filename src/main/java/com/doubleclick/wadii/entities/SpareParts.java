@@ -26,7 +26,7 @@ public class SpareParts {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "order_id", nullable = false)
-    @JsonIgnoreProperties({"spareParts", "hibernateLazyInitializer", "handler"})
+    @JsonIgnoreProperties({"spareParts", "responses", "services", "user", "hibernateLazyInitializer", "handler"})
     private Order order;
 
 //    @OneToMany(mappedBy = "sparePart",fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)

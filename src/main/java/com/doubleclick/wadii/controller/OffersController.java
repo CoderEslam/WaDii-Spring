@@ -11,8 +11,7 @@ import com.doubleclick.wadii.utils.ResponseType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Optional;
@@ -33,7 +32,7 @@ public class OffersController extends Controller<Offer, OfferDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Offer>> insert(Authentication authentication, OfferDto offerDto) {
+    public ResponseEntity<Response<Offer>> insert(Authentication authentication, @RequestBody OfferDto offerDto) {
         if (offerDto.isNotEmpty()) {
             Optional<Provider> provinceOptional = providerRepository.findById(offerDto.getProviderId());
             if (provinceOptional.isPresent()) {

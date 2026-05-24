@@ -45,7 +45,7 @@ public class UserController extends Controller<User, UserDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<User>> insert(Authentication authentication, UserDto userDto) {
+    public ResponseEntity<Response<User>> insert(Authentication authentication, @RequestBody UserDto userDto) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isPresent()) {
             if (userOptional.get().getRole() == Role.ADMIN) {

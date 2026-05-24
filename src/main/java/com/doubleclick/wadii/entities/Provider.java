@@ -52,10 +52,11 @@ public class Provider {
 
     @OneToOne
     @JoinColumn(name = "user_id", nullable = false)
-    @JsonIgnoreProperties("provider") // Prevents recursive fetching
+    @JsonIgnoreProperties({"provider", "orders", "following", "rates"})
     private User user;
 
     @OneToMany
+    @JsonIgnore
     private List<Responses> responses;
 
 

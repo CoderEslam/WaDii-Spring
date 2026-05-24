@@ -11,10 +11,7 @@ import com.doubleclick.wadii.utils.ResponseType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Optional;
@@ -35,7 +32,7 @@ public class WorkTimeController extends Controller<WorkTime, WorkTimeDto, Long> 
     }
 
     @Override
-    public ResponseEntity<Response<WorkTime>> insert(Authentication authentication, WorkTimeDto workTimeDto) {
+    public ResponseEntity<Response<WorkTime>> insert(Authentication authentication, @RequestBody WorkTimeDto workTimeDto) {
         if (workTimeDto.isNotEmpty()) {
             Optional<Provider> providerOptional = providerRepository.findById(workTimeDto.getProviderId());
             if (providerOptional.isPresent()) {

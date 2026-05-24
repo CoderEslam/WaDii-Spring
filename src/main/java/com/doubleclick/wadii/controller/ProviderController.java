@@ -8,19 +8,18 @@ import com.doubleclick.wadii.entities.Follower;
 import com.doubleclick.wadii.entities.FollowerId;
 import com.doubleclick.wadii.entities.Provider;
 import com.doubleclick.wadii.entities.Service;
+import org.springframework.web.bind.annotation.RequestBody;
 import com.doubleclick.wadii.repository.FollowersRepository;
 import com.doubleclick.wadii.repository.ProviderRepository;
 import com.doubleclick.wadii.repository.ServiceRepository;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
 import com.doubleclick.wadii.utils.ResponseType;
-import com.google.gson.JsonObject;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
-import javax.lang.model.type.ErrorType;
 import java.util.List;
 import java.util.Optional;
 
@@ -42,7 +41,7 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
     }
 
     @Override
-    public ResponseEntity<Response<Provider>> insert(Authentication authentication, ProviderDto providerDto) {
+    public ResponseEntity<Response<Provider>> insert(Authentication authentication, @RequestBody ProviderDto providerDto) {
         Optional<User> userOptional = userRepository.findById(providerDto.getUserId());
         if (userOptional.isPresent()) {
             Provider provider = new Provider();

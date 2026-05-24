@@ -13,8 +13,7 @@ import com.doubleclick.wadii.utils.ResponseType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Optional;
@@ -37,7 +36,7 @@ public class RateController extends Controller<Rate, RateDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Rate>> insert(Authentication authentication, RateDto rateDto) {
+    public ResponseEntity<Response<Rate>> insert(Authentication authentication, @RequestBody RateDto rateDto) {
         if (rateDto.isNotEmpty()) {
             Optional<User> optionalUser = userRepository.findById(rateDto.getUserId());
             if (optionalUser.isPresent()) {

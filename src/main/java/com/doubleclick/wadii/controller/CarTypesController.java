@@ -9,8 +9,7 @@ import com.doubleclick.wadii.utils.ResponseType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Optional;
@@ -30,7 +29,7 @@ public class CarTypesController extends Controller<CarType, CarTypesDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<CarType>> insert(Authentication authentication, CarTypesDto carTypesDto) {
+    public ResponseEntity<Response<CarType>> insert(Authentication authentication, @RequestBody CarTypesDto carTypesDto) {
         if (carTypesDto.isNotEmpty()) {
             Optional<CarType> carType = carTypeRepository.findByName(carTypesDto.getName());
             if (carType.isEmpty()) {
