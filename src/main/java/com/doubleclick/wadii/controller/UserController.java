@@ -81,7 +81,6 @@ public class UserController extends Controller<User, UserDto, Long> {
             user.setFirstName(userDto.getFirstName());
             user.setLastName(userDto.getLastName());
             user.setEmail(userDto.getEmail());
-            user.setPassword(userDto.getPassword());
             user.setPhone(userDto.getPhone());
             user = userRepository.save(user);
             return Response.response(user, "User saved successfully", ResponseType.SUCCESS);

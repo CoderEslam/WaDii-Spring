@@ -1,7 +1,6 @@
 package com.doubleclick.wadii.entities;
 
 import com.doubleclick.wadii.auth.model.User;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -24,14 +23,14 @@ public class Follower {
     @MapsId("userId") // maps this field to userId in FollowerId
     @JoinColumn(name = "user_id", nullable = false)
     @JsonIgnoreProperties({"following", "provider", "orders", "rates"})
-    @JsonIgnore
+//    @JsonIgnore
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @MapsId("providerId") // maps this field to providerId in FollowerId
     @JoinColumn(name = "provider_id", nullable = false)
     @JsonIgnoreProperties({"followers", "workTimes", "services", "offers", "rates", "links"})
-    @JsonIgnore
+//    @JsonIgnore
     private Provider provider;
 
 

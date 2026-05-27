@@ -42,7 +42,7 @@ public class User {
     private List<Rate> rates;
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
-    @JsonIgnoreProperties("user")
+    @JsonIgnoreProperties({"user", "provider"})
     private List<Follower> following; // <-- users following providers
 
     @OneToOne

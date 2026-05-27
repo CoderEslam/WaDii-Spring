@@ -2,14 +2,12 @@ package com.doubleclick.wadii.entities;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @Entity
@@ -36,7 +34,7 @@ public class Responses {
     private Order order;
 
     @OneToMany(mappedBy = "response", cascade = CascadeType.ALL, orphanRemoval = true)
-    @JsonIgnoreProperties({"response", "sparePart", "hibernateLazyInitializer", "handler"})
+    @JsonIgnoreProperties({"response", "hibernateLazyInitializer", "handler"})
     private List<SparePartsPrice> sparePartsPrices;
 
 }

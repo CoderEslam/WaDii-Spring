@@ -23,7 +23,7 @@ public class SparePartsPrice {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "spare_part_id", nullable = false)
-    @JsonIgnoreProperties({"sparePartsPrices", "hibernateLazyInitializer", "handler"})
+    @JsonIgnoreProperties({"sparePartsPrices","order", "hibernateLazyInitializer", "handler"})
     private SpareParts sparePart;
 
 
