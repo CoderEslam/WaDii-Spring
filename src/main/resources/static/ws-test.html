@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <style>
+        * { box-sizing: border-box; font-family: monospace; }
+        body { max-width: 800px; margin: 40px auto; padding: 0 20px; background: #111; color: #eee; }
+        h2 { color: #4fc3f7; }
+        label { display: block; margin-top: 12px; color: #aaa; font-size: 13px; }
+        input, textarea { width: 100%; padding: 8px; background: #222; border: 1px solid #444; color: #eee; border-radius: 4px; margin-top: 4px; }
+        button { margin-top: 10px; padding: 8px 18px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .btn-connect    { background: #1976d2; color: #fff; }
+        .btn-disconnect { background: #c62828; color: #fff; }
+        .btn-send       { background: #2e7d32; color: #fff; }
+        #log { background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 12px; height: 280px; overflow-y: auto; font-size: 13px; margin-top: 16px; }
+        .log-in  { color: #81c784; }
+        .log-out { color: #4fc3f7; }
+        .log-err { color: #e57373; }
+        .log-sys { color: #aaa; }
+        .section { background: #1c1c1c; border: 1px solid #333; border-radius: 6px; padding: 16px; margin-bottom: 20px; }
+        .status { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #c62828; margin-right: 6px; }
+        .status.connected { background: #81c784; }
+    </style>
+</head>
+<body>
+
+<h2>WaDii — WebSocket Test</h2>
+
+<!-- CONNECT -->
+<div class="section">
+    <b>1. Connect</b>
+    <label>JWT Token (from POST /auth/login)</label>
+    <input id="token" type="text" placeholder="paste your JWT token here" />
+    <br>
+    <button class="btn-connect" onclick="connect()">Connect</button>
+    <button class="btn-disconnect" onclick="disconnect()">Disconnect</button>
+    &nbsp;<span class="status" id="status"></span><span id="status-text">Disconnected</span>
+</div>
+
+<!-- SEND MESSAGE -->
+<div class="section">
+    <b>2. Send a message (calls REST POST /messages)</b>
+    <label>Sender JWT (Authorization header)</label>
+    <input id="sender-token" type="text" placeholder="JWT of the user sending the message" />
+    <label>To User ID</label>
+    <input id="to-user-id" type="number" placeholder="e.g. 2" />
+    <label>Message text</label>
+    <input id="msg-text" type="text" placeholder="Hello!" />
+    <br>
+    <button class="btn-send" onclick="sendMessage()">Send via REST</button>
+</div>
+
+<!-- LOG -->
+<div>
+    <b>3. Received WebSocket messages</b>
+    <div id="log"></div>
+</div>
+
+<script>
+    let stompClient = null;
+
+    function log(text, cls) {
+        const box = document.getElementById('log');
+        const line = document.createElement('div');
+        line.className = cls || 'log-sys';
+        line.textContent = '[' + new Date().toLocaleTimeString() + '] ' + text;
+        box.appendChild(line);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function connect() {
+        const token = document.getElementById('token').value.trim();
+        if (!token) { alert('Paste your JWT token first'); return; }
+
+        const socket = new SockJS('/ws?token=' + token);
+        stompClient = Stomp.over(socket);
+        stompClient.debug = null; // silence debug spam
+
+        stompClient.connect({}, function () {
+            document.getElementById('status').className = 'status connected';
+            document.getElementById('status-text').textContent = 'Connected';
+            log('Connected to WebSocket', 'log-sys');
+
+            stompClient.subscribe('/user/queue/messages', function (frame) {
+                const msg = JSON.parse(frame.body);
+                log('IN  ← ' + JSON.stringify(msg), 'log-in');
+            });
+
+            log('Subscribed to /user/queue/messages', 'log-sys');
+        }, function (err) {
+            document.getElementById('status').className = 'status';
+            document.getElementById('status-text').textContent = 'Disconnected';
+            log('Error: ' + err, 'log-err');
+        });
+    }
+
+    function disconnect() {
+        if (stompClient) {
+            stompClient.disconnect();
+            stompClient = null;
+            document.getElementById('status').className = 'status';
+            document.getElementById('status-text').textContent = 'Disconnected';
+            log('Disconnected', 'log-sys');
+        }
+    }
+
+    async function sendMessage() {
+        const senderToken = document.getElementById('sender-token').value.trim();
+        const toUserId    = document.getElementById('to-user-id').value.trim();
+        const text        = document.getElementById('msg-text').value.trim();
+
+        if (!senderToken || !toUserId || !text) {
+            alert('Fill in all send fields'); return;
+        }
+
+        const body = { text, type: 'text', toUserId: parseInt(toUserId) };
+        log('OUT → POST /messages  ' + JSON.stringify(body), 'log-out');
+
+        const res = await fetch('/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + senderToken
+            },
+            body: JSON.stringify(body)
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+            log('REST response: ' + JSON.stringify(data), 'log-sys');
+        } else {
+            log('REST error: ' + JSON.stringify(data), 'log-err');
+        }
+    }
+</script>
+</body>
+</html>

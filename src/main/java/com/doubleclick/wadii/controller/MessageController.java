@@ -3,7 +3,9 @@ package com.doubleclick.wadii.controller;
 import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.MessageDto;
+import com.doubleclick.wadii.entities.ChatContact;
 import com.doubleclick.wadii.entities.Message;
+import com.doubleclick.wadii.repository.ChatContactRepository;
 import com.doubleclick.wadii.repository.MessageRepository;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
@@ -12,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,6 +28,8 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
 
     private final MessageRepository messageRepository;
     private final UserRepository userRepository;
+    private final ChatContactRepository chatContactRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @Override
     public ResponseEntity<Response<Message>> show(Long id) {
@@ -50,6 +55,10 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
             message.setFromUser(fromUserOptional.get());
             message.setToUser(toUserOptional.get());
             message = messageRepository.save(message);
+            upsertChatContact(fromUserOptional.get(), toUserOptional.get(), messageDto.getText(), messageDto.getType());
+            upsertChatContact(toUserOptional.get(), fromUserOptional.get(), messageDto.getText(), messageDto.getType());
+            messagingTemplate.convertAndSendToUser(String.valueOf(toUserOptional.get().getId()), "/queue/messages", message);
+            messagingTemplate.convertAndSendToUser(String.valueOf(fromUserOptional.get().getId()), "/queue/messages", message);
             return Response.response(message, "Message sent successfully", ResponseType.SUCCESS);
         } else {
             return Response.response(null, "text, type, or toUserId is empty", ResponseType.ERROR);
@@ -92,6 +101,7 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
         return Response.response(messageRepository.findAll(), "All messages", ResponseType.SUCCESS);
     }
 
+
     @GetMapping("/sent")
     public ResponseEntity<Response<List<Message>>> getSentMessages(Authentication authentication) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
@@ -132,5 +142,30 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
                 PageRequest.of(page, size)
         );
         return Response.response(conversation, "Conversation", ResponseType.SUCCESS);
+    }
+
+    @GetMapping("/chat-list")
+    public ResponseEntity<Response<List<ChatContact>>> getChatList(Authentication authentication) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
+        }
+        List<ChatContact> contacts = chatContactRepository.findByUserIdOrderByLastMessageAtDesc(userOptional.get().getId());
+        return Response.response(contacts, "Chat list", ResponseType.SUCCESS);
+    }
+
+    private void upsertChatContact(User user, User contact, String lastMessage, String messageType) {
+        ChatContact chatContact = chatContactRepository
+                .findByUserIdAndContactId(user.getId(), contact.getId())
+                .orElseGet(() -> {
+                    ChatContact c = new ChatContact();
+                    c.setUser(user);
+                    c.setContact(contact);
+                    return c;
+                });
+        chatContact.setLastMessageAt(java.time.LocalDateTime.now());
+        chatContact.setLastMessage(lastMessage);
+        chatContact.setMessageType(messageType);
+        chatContactRepository.save(chatContact);
     }
 }
