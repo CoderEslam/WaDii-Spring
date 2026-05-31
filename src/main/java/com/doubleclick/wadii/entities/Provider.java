@@ -26,6 +26,9 @@ public class Provider {
     private Double rate;
     @Column(nullable = false)
     private Long followersCount;
+    @Column(nullable = false)
+    private String name;
+
 
     @OneToMany(mappedBy = "provider", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonIgnoreProperties("provider") // Prevents recursive fetching
