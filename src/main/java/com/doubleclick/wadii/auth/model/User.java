@@ -58,4 +58,7 @@ public class User {
     @JsonIgnoreProperties({"user", "hibernateLazyInitializer", "handler"}) // Prevents recursive fetching
     private List<Order> orders;
 
+    @ManyToOne
+    @JoinColumn(name = "city_id")
+    private City city;
 }

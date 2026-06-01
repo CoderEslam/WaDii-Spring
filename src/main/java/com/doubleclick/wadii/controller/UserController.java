@@ -4,7 +4,9 @@ import com.doubleclick.wadii.auth.config.JwtUtil;
 import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.UserDto;
+import com.doubleclick.wadii.entities.City;
 import com.doubleclick.wadii.entities.Role;
+import com.doubleclick.wadii.repository.CityRepository;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
 import com.doubleclick.wadii.utils.ResponseType;
@@ -34,6 +36,7 @@ public class UserController extends Controller<User, UserDto, Long> {
 
     private static final String UPLOAD_DIR = "uploads/";
     private final UserRepository userRepository;
+    private final CityRepository cityRepository;
     private final JwtUtil jwtUtil;
 
 
@@ -47,7 +50,8 @@ public class UserController extends Controller<User, UserDto, Long> {
     @Override
     public ResponseEntity<Response<User>> insert(Authentication authentication, @RequestBody UserDto userDto) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        if (userOptional.isPresent()) {
+        Optional<City> city = cityRepository.findById(userDto.getCityId());
+        if (userOptional.isPresent() && city.isPresent()) {
             if (userOptional.get().getRole() == Role.ADMIN) {
                 User user = new User();
                 user.setFirstName(userDto.getFirstName());
@@ -55,6 +59,7 @@ public class UserController extends Controller<User, UserDto, Long> {
                 user.setEmail(userDto.getEmail());
                 user.setPassword(userDto.getPassword());
                 user.setPhone(userDto.getPhone());
+                user.setCity(city.get());
                 if (userDto.getUserType() == 0) {
                     user.setRole(Role.USER);
                 } else {
@@ -75,13 +80,14 @@ public class UserController extends Controller<User, UserDto, Long> {
     @Override
     public ResponseEntity<Response<User>> update(UserDto userDto) {
         Optional<User> userOptional = userRepository.findById(userDto.getId());
-        if (userOptional.isPresent()) {
+        Optional<City> cityOptional = cityRepository.findById(userDto.getCityId());
+        if (userOptional.isPresent() && cityOptional.isPresent()) {
             User user = userOptional.get();
-            user.setId(userDto.getId());
             user.setFirstName(userDto.getFirstName());
             user.setLastName(userDto.getLastName());
-            user.setEmail(userDto.getEmail());
+            user.setFcmToken(userDto.getFcmToken());
             user.setPhone(userDto.getPhone());
+            user.setCity(cityOptional.get());
             user = userRepository.save(user);
             return Response.response(user, "User saved successfully", ResponseType.SUCCESS);
         } else {

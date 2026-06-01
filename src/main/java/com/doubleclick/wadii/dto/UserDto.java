@@ -20,6 +20,7 @@ public class UserDto {
     private String fcmToken;
     private String image;
     private String phone;
+    private Long cityId;
     private Long userType;
 
 }

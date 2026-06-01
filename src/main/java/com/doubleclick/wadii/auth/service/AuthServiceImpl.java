@@ -5,8 +5,10 @@ import com.doubleclick.wadii.auth.config.JwtUtil;
 import com.doubleclick.wadii.auth.dto.AuthRequest;
 import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.auth.repository.UserRepository;
+import com.doubleclick.wadii.entities.City;
 import com.doubleclick.wadii.entities.Provider;
 import com.doubleclick.wadii.entities.Role;
+import com.doubleclick.wadii.repository.CityRepository;
 import com.doubleclick.wadii.repository.ProviderRepository;
 import com.doubleclick.wadii.utils.Response;
 import com.doubleclick.wadii.utils.ResponseType;
@@ -26,6 +28,7 @@ public class AuthServiceImpl implements AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtUtil jwtUtil;
     private final UserRepository userRepository;
+    private final CityRepository cityRepository;
     private final ProviderRepository providerRepository;
     private final PasswordEncoder passwordEncoder;
 
@@ -34,11 +37,16 @@ public class AuthServiceImpl implements AuthService {
         if (userRepository.findByEmail(authRequest.getEmail()).isPresent()) {
             return Response.response(null, "User already exists with this email = " + authRequest.getEmail(), ResponseType.ERROR);
         }
+        Optional<City> city = cityRepository.findById(authRequest.getCityId());
+        if (city.isEmpty()) {
+            return Response.response(null, "this city id not exist with id = " + authRequest.getCityId(), ResponseType.ERROR);
+        }
         User user = new User();
         user.setFirstName(authRequest.getFirstName());
         user.setLastName(authRequest.getLastName());
         user.setEmail(authRequest.getEmail());
         user.setPhone(authRequest.getPhone());
+        user.setCity(city.get());
         user.setFcmToken(authRequest.getFcmToken());
         if (authRequest.getUserType() == 0) {
             user.setRole(Role.USER);
@@ -54,6 +62,7 @@ public class AuthServiceImpl implements AuthService {
             provider.setUser(user);
             provider.setFollowersCount(0L);
             provider.setRate(0.0);
+            provider.setName(authRequest.getProviderName());
             provider = providerRepository.save(provider);
             return Response.response(user, "provider registered successfully", ResponseType.SUCCESS);
         }
@@ -109,7 +118,8 @@ public class AuthServiceImpl implements AuthService {
                 provider.getUser().getRates(),
                 provider.getUser().getFollowing(),
                 provider,
-                provider.getUser().getOrders()
+                provider.getUser().getOrders(),
+                provider.getUser().getCity()
         );
     }
 }

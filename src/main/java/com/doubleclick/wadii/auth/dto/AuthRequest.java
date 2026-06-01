@@ -16,5 +16,7 @@ public class AuthRequest {
     private String password;
     private String phone;
     private String fcmToken;
+    private Long cityId;
+    private String providerName;
     private int userType; // 0 for User, 1 for Provider
 }

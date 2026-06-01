@@ -1,7 +1,7 @@
 package com.doubleclick.wadii.entities;
 
 public enum Role {
-    USER,
-    PROVIDER,
-    ADMIN
+    USER,//0
+    PROVIDER,//1
+    ADMIN//2
 }
