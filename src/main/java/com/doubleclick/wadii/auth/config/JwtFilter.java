@@ -27,8 +27,8 @@ public class JwtFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
         String path = request.getRequestURI();
-        // Skip filtering for auth and ws endpoints
-        if (path.startsWith("/auth") || path.startsWith("/ws")) {
+        // Skip filtering for auth, ws, and public image endpoints
+        if (path.startsWith("/auth") || path.startsWith("/ws") || path.matches("/users/[^/]+\\.[^/]+")) {
             filterChain.doFilter(request, response);
             return;
         }
