@@ -45,9 +45,13 @@ public class RateController extends Controller<Rate, RateDto, Long> {
                     Rate rate = new Rate();
                     rate.setRate(rateDto.getRate());
                     rate.setComment(rateDto.getComment());
-                    rate.setProvider(providerOptional.get());
+                    Provider provider = providerOptional.get();
+                    rate.setProvider(provider);
                     rate.setUser(optionalUser.get());
                     rate = rateRepository.save(rate);
+                    Double avg = rateRepository.findAverageRateByProviderId(provider.getId());
+                    provider.setRate(avg != null ? avg : 0.0);
+                    providerRepository.save(provider);
                     return Response.response(rate, "Rate saved successfully", ResponseType.SUCCESS);
                 } else {
                     //provider not exist

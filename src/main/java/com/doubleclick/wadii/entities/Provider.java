@@ -38,8 +38,8 @@ public class Provider {
     @JsonIgnoreProperties({"providers", "orders"}) // Hide orders from services inside provider
     private List<Service> services;
 
-    @OneToMany
-    @JsonIgnore
+    @OneToMany(mappedBy = "provider", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnoreProperties({"provider", "user"})
     private List<Rate> rates;
 
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "provider", cascade = CascadeType.ALL, orphanRemoval = true)

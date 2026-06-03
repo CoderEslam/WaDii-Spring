@@ -22,7 +22,7 @@ public class Follower {
     @ManyToOne(fetch = FetchType.LAZY)
     @MapsId("userId") // maps this field to userId in FollowerId
     @JoinColumn(name = "user_id", nullable = false)
-    @JsonIgnoreProperties({"following", "provider", "orders", "rates"})
+    @JsonIgnoreProperties({"following", "provider", "orders", "rates","hibernateLazyInitializer"})
 //    @JsonIgnore
     private User user;
 

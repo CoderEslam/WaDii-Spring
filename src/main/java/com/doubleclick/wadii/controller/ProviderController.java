@@ -121,7 +121,8 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
             if (providerOptional.isPresent()) {
                 Provider provider = providerOptional.get();
                 Long count = provider.getFollowersCount();
-                provider.setFollowersCount(++count);
+                count = count + 1;
+                provider.setFollowersCount(count);
                 Follower follower = new Follower();
                 FollowerId followerId = new FollowerId(userOptional.get().getId(), id);
                 follower.setId(followerId);
@@ -136,5 +137,27 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
         } else {
             return Response.response(null, "user id not exist", ResponseType.SUCCESS);
         }
+    }
+
+    @DeleteMapping("/unfollow-provider/{id}")
+    public ResponseEntity<Response<String>> unfollow(Authentication authentication, @PathVariable Long id) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        Optional<Provider> providerOptional = providerRepository.findById(id);
+        if (userOptional.isEmpty()) {
+            return Response.response("null", "user not found", ResponseType.NOT_FOUND);
+        }
+        if (providerOptional.isEmpty()) {
+            return Response.response("null", "provider id not exist", ResponseType.NOT_FOUND);
+        }
+        FollowerId followerId = new FollowerId(userOptional.get().getId(), id);
+        if (!followersRepository.existsById(followerId)) {
+            return Response.response("null", "you are not following this provider", ResponseType.NOT_FOUND);
+        }
+        followersRepository.deleteById(followerId);
+        Provider provider = providerOptional.get();
+        long count = provider.getFollowersCount();
+        provider.setFollowersCount(count > 0 ? count - 1 : 0);
+        providerRepository.save(provider);
+        return Response.response("Done", "unfollowed successfully", ResponseType.SUCCESS);
     }
 }
