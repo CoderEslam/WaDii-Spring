@@ -4,14 +4,10 @@ import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.ProviderDto;
 import com.doubleclick.wadii.dto.ServicesProviderDto;
-import com.doubleclick.wadii.entities.Follower;
-import com.doubleclick.wadii.entities.FollowerId;
-import com.doubleclick.wadii.entities.Provider;
-import com.doubleclick.wadii.entities.Service;
+import com.doubleclick.wadii.dto.UpdateProviderDto;
+import com.doubleclick.wadii.entities.*;
 import org.springframework.web.bind.annotation.RequestBody;
-import com.doubleclick.wadii.repository.FollowersRepository;
-import com.doubleclick.wadii.repository.ProviderRepository;
-import com.doubleclick.wadii.repository.ServiceRepository;
+import com.doubleclick.wadii.repository.*;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
 import com.doubleclick.wadii.utils.ResponseType;
@@ -20,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,6 +29,9 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
     private final ProviderRepository providerRepository;
     private final ServiceRepository serviceRepository;
     private final FollowersRepository followersRepository;
+    private final WorkTimeRepository workTimeRepository;
+    private final LinksRepository linksRepository;
+    private final OfferRepository offerRepository;
 
     @Override
     public ResponseEntity<Response<Provider>> show(Long id) {
@@ -137,6 +137,101 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
         } else {
             return Response.response(null, "user id not exist", ResponseType.SUCCESS);
         }
+    }
+
+    @PostMapping("/update-all/{id}")
+    public ResponseEntity<Response<Provider>> updateAll(@PathVariable Long id, @RequestBody UpdateProviderDto dto) {
+        Optional<Provider> providerOptional = providerRepository.findById(id);
+        if (providerOptional.isEmpty()) {
+            return Response.response(null, "No provider found with id: " + id, ResponseType.NOT_FOUND);
+        }
+
+        Provider provider = providerOptional.get();
+
+        // Update user basic info
+        User user = provider.getUser();
+        if (dto.getFirstName() != null) user.setFirstName(dto.getFirstName());
+        if (dto.getLastName() != null) user.setLastName(dto.getLastName());
+        if (dto.getPhone() != null) user.setPhone(dto.getPhone());
+        if (dto.getEmail() != null) user.setEmail(dto.getEmail());
+        userRepository.save(user);
+
+        // Update services
+        if (dto.getServiceIds() != null) {
+            List<Service> oldServices = provider.getServices();
+            for (Service s : oldServices) {
+                s.getProviders().remove(provider);
+                serviceRepository.save(s);
+            }
+            List<Service> newServices = serviceRepository.findAllById(dto.getServiceIds());
+            for (Service s : newServices) {
+                s.getProviders().add(provider);
+                serviceRepository.save(s);
+            }
+            provider.setServices(newServices);
+        }
+
+        // Update work times
+        if (dto.getWorkTimes() != null) {
+            for (UpdateProviderDto.WorkTime wt : dto.getWorkTimes()) {
+                if (wt.getId() > 0) {
+                    workTimeRepository.findById((long) wt.getId()).ifPresent(workTime -> {
+                        workTime.setDay(wt.getDay());
+                        workTime.setStartTime(wt.getStartTime());
+                        workTime.setCloseTime(wt.getCloseTime());
+                        workTimeRepository.save(workTime);
+                    });
+                } else {
+                    WorkTime newWt = new WorkTime();
+                    newWt.setDay(wt.getDay());
+                    newWt.setStartTime(wt.getStartTime());
+                    newWt.setCloseTime(wt.getCloseTime());
+                    newWt.setProvider(provider);
+                    workTimeRepository.save(newWt);
+                }
+            }
+        }
+
+        // Update links
+        if (dto.getLinks() != null) {
+            for (UpdateProviderDto.Link l : dto.getLinks()) {
+                if (l.getId() > 0) {
+                    linksRepository.findById((long) l.getId()).ifPresent(link -> {
+                        link.setLink(l.getLink());
+                        linksRepository.save(link);
+                    });
+                } else {
+                    Links newLink = new Links();
+                    newLink.setLink(l.getLink());
+                    newLink.setProvider(provider);
+                    linksRepository.save(newLink);
+                }
+            }
+        }
+
+        // Update offers
+        if (dto.getOffers() != null) {
+            for (UpdateProviderDto.Offer o : dto.getOffers()) {
+                if (o.getId() > 0) {
+                    offerRepository.findById((long) o.getId()).ifPresent(offer -> {
+                        offer.setTitle(o.getTitle());
+                        offer.setDescription(o.getDescription());
+                        if (o.getEndDate() != null) offer.setEndDate(LocalDate.parse(o.getEndDate()));
+                        offerRepository.save(offer);
+                    });
+                } else {
+                    Offer newOffer = new Offer();
+                    newOffer.setTitle(o.getTitle());
+                    newOffer.setDescription(o.getDescription());
+                    if (o.getEndDate() != null) newOffer.setEndDate(LocalDate.parse(o.getEndDate()));
+                    newOffer.setProvider(provider);
+                    offerRepository.save(newOffer);
+                }
+            }
+        }
+
+        provider = providerRepository.save(provider);
+        return Response.response(provider, "Provider updated successfully", ResponseType.SUCCESS);
     }
 
     @DeleteMapping("/unfollow-provider/{id}")
