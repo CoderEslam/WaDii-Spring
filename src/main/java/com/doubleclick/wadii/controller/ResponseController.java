@@ -1,5 +1,7 @@
 package com.doubleclick.wadii.controller;
 
+import com.doubleclick.wadii.auth.model.User;
+import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.ResponseDto;
 import com.doubleclick.wadii.dto.SparePartsPriceDto;
 import com.doubleclick.wadii.entities.*;
@@ -24,6 +26,7 @@ import java.util.stream.Collectors;
 
 public class ResponseController extends Controller<Responses, ResponseDto, Long> {
 
+    private final UserRepository userRepository;
     private final ResponseRepository responseRepository;
     private final ProviderRepository providerRepository;
     private final SparePartsPriceRepository sparePartsPriceRepository;
@@ -77,6 +80,7 @@ public class ResponseController extends Controller<Responses, ResponseDto, Long>
             responses.setComment(responseDto.getComment());
             responses.setProvider(provider);
             responses.setOrder(order);
+            responses.setResponsesState(ResponsesState.PENDING);
             responses = responseRepository.save(responses);
 
             List<SparePartsPriceDto> priceDtos = responseDto.getSparePartsPrice();
@@ -126,8 +130,8 @@ public class ResponseController extends Controller<Responses, ResponseDto, Long>
 
     @Override
     public ResponseEntity<Response<Responses>> delete(Long id) {
-        Optional<Responses> cityOptional = responseRepository.findById(id);
-        if (cityOptional.isPresent()) {
+        Optional<Responses> responsesOptional = responseRepository.findById(id);
+        if (responsesOptional.isPresent()) {
             responseRepository.deleteById(id);
             return Response.response(null, "response deleted successfully", ResponseType.SUCCESS);
         } else {
@@ -138,5 +142,42 @@ public class ResponseController extends Controller<Responses, ResponseDto, Long>
     @Override
     public ResponseEntity<Response<List<Responses>>> readAll() {
         return Response.response(responseRepository.findAll(), "All responses", ResponseType.SUCCESS);
+    }
+
+
+    @PostMapping("/accept-response")
+    public ResponseEntity<Response<Responses>> accept(Authentication authentication, @RequestBody ResponseDto responseDto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isPresent()) {
+            Optional<Responses> responsesOptional = responseRepository.findById(responseDto.getId());
+            if (responsesOptional.isPresent()) {
+                Responses responses = responsesOptional.get();
+                responses.setResponsesState(ResponsesState.ACCEPT);
+                responses = responseRepository.save(responses);
+                return Response.response(responses, "All responses", ResponseType.SUCCESS);
+            } else {
+                return Response.response(null, "there is no response with this id : " + responseDto.getId(), ResponseType.NOT_FOUND);
+            }
+        } else {
+            return Response.response(null, "there is no user with this email : " + authentication.getName(), ResponseType.NOT_FOUND);
+        }
+    }
+
+    @PostMapping("/cancel-response")
+    public ResponseEntity<Response<Responses>> cancel(Authentication authentication, @RequestBody ResponseDto responseDto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isPresent()) {
+            Optional<Responses> responsesOptional = responseRepository.findById(responseDto.getId());
+            if (responsesOptional.isPresent()) {
+                Responses responses = responsesOptional.get();
+                responses.setResponsesState(ResponsesState.CANCEL);
+                responses = responseRepository.save(responses);
+                return Response.response(responses, "All responses", ResponseType.SUCCESS);
+            } else {
+                return Response.response(null, "there is no response with this id : " + responseDto.getId(), ResponseType.NOT_FOUND);
+            }
+        } else {
+            return Response.response(null, "there is no user with this email : " + authentication.getName(), ResponseType.NOT_FOUND);
+        }
     }
 }
