@@ -55,7 +55,7 @@ public class Provider {
 
     @OneToOne
     @JoinColumn(name = "user_id", nullable = false)
-    @JsonIgnoreProperties({"provider", "orders", "following", "rates"})
+    @JsonIgnoreProperties({"provider", "orders", "following", "rates", "hibernateLazyInitializer"})
     private User user;
 
     @OneToMany
