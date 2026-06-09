@@ -29,4 +29,7 @@ public class Offer {
     @JsonIgnoreProperties("offers") // Prevents recursive fetching
     private Provider provider;
 
+    @Transient
+    private boolean saved;
+
 }

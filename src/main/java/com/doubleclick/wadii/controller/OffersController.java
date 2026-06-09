@@ -1,10 +1,12 @@
 package com.doubleclick.wadii.controller;
 
+import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.dto.OfferDto;
 import com.doubleclick.wadii.entities.Offer;
 import com.doubleclick.wadii.entities.Provider;
 import com.doubleclick.wadii.repository.OfferRepository;
 import com.doubleclick.wadii.repository.ProviderRepository;
+import com.doubleclick.wadii.repository.SavedOfferRepository;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
 import com.doubleclick.wadii.utils.ResponseType;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @RequiredArgsConstructor
 @RestController
@@ -23,6 +26,7 @@ public class OffersController extends Controller<Offer, OfferDto, Long> {
 
     private final OfferRepository offerRepository;
     private final ProviderRepository providerRepository;
+    private final SavedOfferRepository savedOfferRepository;
 
     @Override
     public ResponseEntity<Response<Offer>> show(Long id) {
@@ -90,6 +94,13 @@ public class OffersController extends Controller<Offer, OfferDto, Long> {
 
     @Override
     public ResponseEntity<Response<List<Offer>>> readAll() {
-        return Response.response(offerRepository.findAll(), "All offers", ResponseType.SUCCESS);
+        List<Offer> offers = offerRepository.findAll();
+        Authentication authentication = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof User user) {
+            Set<Long> savedOfferIds = savedOfferRepository.findOfferIdsByUserId(user.getId());
+            offers.forEach(offer -> offer.setSaved(savedOfferIds.contains(offer.getId())));
+        }
+        return Response.response(offers, "All offers", ResponseType.SUCCESS);
     }
 }
