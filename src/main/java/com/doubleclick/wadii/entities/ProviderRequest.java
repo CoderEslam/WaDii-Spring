@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Entity
 @Getter
@@ -24,6 +25,28 @@ public class ProviderRequest {
 
     @Column(nullable = false)
     private String name;
+
+    private String frontIdImage;
+
+    private String backIdImage;
+
+    private String address;
+
+    private String phoneNumber;
+
+    @ManyToMany
+    @JoinTable(
+            name = "provider_request_services",
+            joinColumns = @JoinColumn(name = "request_id"),
+            inverseJoinColumns = @JoinColumn(name = "service_id")
+    )
+    @JsonIgnoreProperties({"providers", "orders"})
+    private List<Service> services;
+
+    @ElementCollection
+    @CollectionTable(name = "provider_request_links", joinColumns = @JoinColumn(name = "request_id"))
+    @Column(name = "link")
+    private List<String> links;
 
     @ManyToOne
     @JoinColumn(name = "user_id", nullable = false)
