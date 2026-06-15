@@ -18,6 +18,8 @@ public class ResponseDto {
     private Long providerId;
     private Long orderId;
     private String comment;
+    private Double latitude;
+    private Double longitude;
     private List<SparePartsPriceDto> sparePartsPrice;
 
     public boolean isNotEmpty() {

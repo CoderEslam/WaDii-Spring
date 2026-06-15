@@ -27,6 +27,8 @@ public class Order {
     private String carModelYear;
     private String comment;
     private LocalDate date;
+    private Double latitude;
+    private Double longitude;
 
 
     @ManyToOne(fetch = FetchType.LAZY)

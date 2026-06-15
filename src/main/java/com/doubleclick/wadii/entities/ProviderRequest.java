@@ -30,6 +30,10 @@ public class ProviderRequest {
 
     private String backIdImage;
 
+    private String taxCardFront;
+
+    private String taxCardBack;
+
     private String address;
 
     private String phoneNumber;

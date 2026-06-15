@@ -2,6 +2,7 @@ package com.doubleclick.wadii.entities;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -25,9 +26,8 @@ public class WorkTime {
 
 
     @ManyToOne
-    @JoinColumn(name = "provider_id", nullable = false)
-    @JsonIgnoreProperties("workTimes") // Prevents recursive fetching
-    @JsonIgnore
-    private Provider provider;
+    @JoinColumn(name = "branch_id", nullable = false)
+    @JsonIgnoreProperties("workTimes")
+    private Branch branch;
 
 }

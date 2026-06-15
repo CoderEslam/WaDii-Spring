@@ -78,6 +78,14 @@ public class ProviderRequestController {
                 String filename = saveFile(dto.getBackIdImage(), uploadDir);
                 request.setBackIdImage(filename);
             }
+            if (dto.getTaxCardFront() != null && !dto.getTaxCardFront().isEmpty()) {
+                String filename = saveFile(dto.getTaxCardFront(), uploadDir);
+                request.setTaxCardFront(filename);
+            }
+            if (dto.getTaxCardBack() != null && !dto.getTaxCardBack().isEmpty()) {
+                String filename = saveFile(dto.getTaxCardBack(), uploadDir);
+                request.setTaxCardBack(filename);
+            }
         } catch (IOException e) {
             return Response.response(null, "Failed to upload images: " + e.getMessage(), ResponseType.INTERNAL_SERVER_ERROR);
         }

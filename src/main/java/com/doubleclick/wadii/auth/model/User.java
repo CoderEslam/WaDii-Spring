@@ -30,6 +30,7 @@ public class User {
     private String token;
     private String fcmToken;
     private String image;
+    private String backgroundImage;
     private String phone;
 
     @Enumerated(EnumType.STRING)

@@ -49,6 +49,8 @@ public class OrderController extends Controller<Order, OrderDto, Long> {
         order.setUser(userOptional.get());
         order.setComment(orderDto.getComment());
         order.setCarModelYear(orderDto.getCarModelYear());
+        order.setLatitude(orderDto.getLatitude());
+        order.setLongitude(orderDto.getLongitude());
         order.setServices(services);
         order = orderRepository.save(order);
         for (SparePartsDto sparePartsDto : orderDto.getSpareParts()) {

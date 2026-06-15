@@ -6,10 +6,13 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface WorkTimeRepository extends JpaRepository<WorkTime, Long> {
 
-    @Query("SELECT w FROM WorkTime w WHERE w.provider.id = :providerId ORDER BY w.day")
-    List<WorkTime> findAllByProviderId(@Param("providerId") Long providerId);
+    @Query("SELECT w FROM WorkTime w WHERE w.branch.id = :branchId ORDER BY w.day")
+    List<WorkTime> findAllByBranchId(@Param("branchId") Long branchId);
+
+    Optional<WorkTime> findByBranchIdAndDay(Long branchId, String day);
 
 }

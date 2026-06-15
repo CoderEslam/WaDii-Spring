@@ -7,7 +7,13 @@ import com.doubleclick.wadii.dto.ServicesProviderDto;
 import com.doubleclick.wadii.dto.UpdateProviderDto;
 import com.doubleclick.wadii.entities.*;
 import org.springframework.web.bind.annotation.RequestBody;
-import com.doubleclick.wadii.repository.*;
+import com.doubleclick.wadii.repository.BranchRepository;
+import com.doubleclick.wadii.repository.FollowersRepository;
+import com.doubleclick.wadii.repository.LinksRepository;
+import com.doubleclick.wadii.repository.OfferRepository;
+import com.doubleclick.wadii.repository.ProviderRepository;
+import com.doubleclick.wadii.repository.ServiceRepository;
+import com.doubleclick.wadii.repository.WorkTimeRepository;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
 import com.doubleclick.wadii.utils.ResponseType;
@@ -29,9 +35,10 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
     private final ProviderRepository providerRepository;
     private final ServiceRepository serviceRepository;
     private final FollowersRepository followersRepository;
-    private final WorkTimeRepository workTimeRepository;
     private final LinksRepository linksRepository;
     private final OfferRepository offerRepository;
+    private final BranchRepository branchRepository;
+    private final WorkTimeRepository workTimeRepository;
 
     @Override
     public ResponseEntity<Response<Provider>> show(Long id) {
@@ -171,23 +178,40 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
             provider.setServices(newServices);
         }
 
-        // Update work times
-        if (dto.getWorkTimes() != null) {
-            for (UpdateProviderDto.WorkTime wt : dto.getWorkTimes()) {
-                if (wt.getId() > 0) {
-                    workTimeRepository.findById((long) wt.getId()).ifPresent(workTime -> {
-                        workTime.setDay(wt.getDay());
-                        workTime.setStartTime(wt.getStartTime());
-                        workTime.setCloseTime(wt.getCloseTime());
-                        workTimeRepository.save(workTime);
-                    });
+        // Update branches and their work times
+        if (dto.getBranches() != null) {
+            for (UpdateProviderDto.Branch b : dto.getBranches()) {
+                Branch branch;
+                if (b.getId() > 0) {
+                    branch = branchRepository.findById((long) b.getId()).orElse(new Branch());
                 } else {
-                    WorkTime newWt = new WorkTime();
-                    newWt.setDay(wt.getDay());
-                    newWt.setStartTime(wt.getStartTime());
-                    newWt.setCloseTime(wt.getCloseTime());
-                    newWt.setProvider(provider);
-                    workTimeRepository.save(newWt);
+                    branch = new Branch();
+                }
+                if (b.getName() != null) branch.setName(b.getName());
+                if (b.getAddress() != null) branch.setAddress(b.getAddress());
+                branch.setProvider(provider);
+                branch = branchRepository.save(branch);
+                if (b.getWorkTimes() != null) {
+                    final Branch savedBranch = branch;
+                    for (UpdateProviderDto.WorkTime wt : b.getWorkTimes()) {
+                        if (wt.getId() > 0) {
+                            workTimeRepository.findById((long) wt.getId()).ifPresent(workTime -> {
+                                workTime.setDay(wt.getDay());
+                                workTime.setStartTime(wt.getStartTime());
+                                workTime.setCloseTime(wt.getCloseTime());
+                                workTimeRepository.save(workTime);
+                            });
+                        } else {
+                            WorkTime workTime = workTimeRepository
+                                    .findByBranchIdAndDay(savedBranch.getId(), wt.getDay())
+                                    .orElse(new WorkTime());
+                            workTime.setDay(wt.getDay());
+                            workTime.setStartTime(wt.getStartTime());
+                            workTime.setCloseTime(wt.getCloseTime());
+                            workTime.setBranch(savedBranch);
+                            workTimeRepository.save(workTime);
+                        }
+                    }
                 }
             }
         }

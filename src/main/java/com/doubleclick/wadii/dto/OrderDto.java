@@ -17,6 +17,8 @@ public class OrderDto {
     private String comment;
     private LocalDate date;
     private Long userId;
+    private Double latitude;
+    private Double longitude;
     private List<Long> servicesIds;
     private List<SparePartsDto> spareParts;
 

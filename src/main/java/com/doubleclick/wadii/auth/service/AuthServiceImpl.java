@@ -113,6 +113,7 @@ public class AuthServiceImpl implements AuthService {
                 provider.getUser().getToken(),
                 provider.getUser().getFcmToken(),
                 provider.getUser().getImage(),
+                provider.getUser().getBackgroundImage(),
                 provider.getUser().getPhone(),
                 provider.getUser().getRole(),
                 provider.getUser().getRates(),

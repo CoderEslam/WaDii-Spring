@@ -22,7 +22,7 @@ public class ProviderDto {
     private Long id;
     private Double rate;
     private Long followersCount;
-    private List<WorkTime> workTimes;
+    private List<Branch> branches;
     private List<Service> services;
     private List<Rate> rates;
     private List<Links> links;

@@ -78,6 +78,8 @@ public class ResponseController extends Controller<Responses, ResponseDto, Long>
 
             Responses responses = new Responses();
             responses.setComment(responseDto.getComment());
+            responses.setLatitude(responseDto.getLatitude());
+            responses.setLongitude(responseDto.getLongitude());
             responses.setProvider(provider);
             responses.setOrder(order);
             responses.setResponsesState(ResponsesState.PENDING);

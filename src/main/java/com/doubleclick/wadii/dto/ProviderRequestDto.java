@@ -17,6 +17,8 @@ public class ProviderRequestDto {
     private Long userId;
     private MultipartFile frontIdImage;
     private MultipartFile backIdImage;
+    private MultipartFile taxCardFront;
+    private MultipartFile taxCardBack;
     private String address;
     private String phoneNumber;
     private List<Long> serviceIds;

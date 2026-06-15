@@ -14,9 +14,31 @@ public class UpdateProviderDto {
     public String phone;
     public String email;
     public ArrayList<Long> serviceIds;
-    public ArrayList<WorkTime> workTimes;
+    public ArrayList<Branch> branches;
     public ArrayList<Link> links;
     public ArrayList<Offer> offers;
+
+    @Getter
+    @Setter
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public static class Branch {
+        public int id;
+        public String name;
+        public String address;
+        public ArrayList<WorkTime> workTimes;
+    }
+
+    @Getter
+    @Setter
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public static class WorkTime {
+        public int id;
+        public String day;
+        public String startTime;
+        public String closeTime;
+    }
 
     @Getter
     @Setter
@@ -38,17 +60,4 @@ public class UpdateProviderDto {
         public String endDate;
     }
 
-    @Getter
-    @Setter
-    @AllArgsConstructor
-    @NoArgsConstructor
-    public static class WorkTime {
-        public int id;
-        public String day;
-        public String startTime;
-        public String closeTime;
-    }
-
 }
-
-

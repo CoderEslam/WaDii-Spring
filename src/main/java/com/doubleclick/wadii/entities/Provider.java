@@ -31,8 +31,8 @@ public class Provider {
 
 
     @OneToMany(mappedBy = "provider", cascade = CascadeType.ALL, orphanRemoval = true)
-    @JsonIgnoreProperties("provider") // Prevents recursive fetching
-    private List<WorkTime> workTimes;
+    @JsonIgnoreProperties({"provider"})
+    private List<Branch> branches;
 
     @ManyToMany(mappedBy = "providers")
     @JsonIgnoreProperties({"providers", "orders"}) // Hide orders from services inside provider

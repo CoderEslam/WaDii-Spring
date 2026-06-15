@@ -15,7 +15,7 @@ public class WorkTimeDto {
     private String startTime;
     private String closeTime;
     private String day;
-    private Long providerId;
+    private Long branchId;
 
     public boolean isNotEmpty() {
         return startTime != null && !startTime.trim().isEmpty()

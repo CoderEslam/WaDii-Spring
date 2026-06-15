@@ -22,6 +22,8 @@ public class Responses {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     private String comment;
+    private Double latitude;
+    private Double longitude;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "provider_id", nullable = false)

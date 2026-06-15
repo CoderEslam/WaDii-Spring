@@ -1,9 +1,9 @@
 package com.doubleclick.wadii.controller;
 
 import com.doubleclick.wadii.dto.WorkTimeDto;
-import com.doubleclick.wadii.entities.Provider;
+import com.doubleclick.wadii.entities.Branch;
 import com.doubleclick.wadii.entities.WorkTime;
-import com.doubleclick.wadii.repository.ProviderRepository;
+import com.doubleclick.wadii.repository.BranchRepository;
 import com.doubleclick.wadii.repository.WorkTimeRepository;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
@@ -22,7 +22,7 @@ import java.util.Optional;
 public class WorkTimeController extends Controller<WorkTime, WorkTimeDto, Long> {
 
     private final WorkTimeRepository workTimeRepository;
-    private final ProviderRepository providerRepository;
+    private final BranchRepository branchRepository;
 
     @Override
     public ResponseEntity<Response<WorkTime>> show(Long id) {
@@ -34,17 +34,17 @@ public class WorkTimeController extends Controller<WorkTime, WorkTimeDto, Long> 
     @Override
     public ResponseEntity<Response<WorkTime>> insert(Authentication authentication, @RequestBody WorkTimeDto workTimeDto) {
         if (workTimeDto.isNotEmpty()) {
-            Optional<Provider> providerOptional = providerRepository.findById(workTimeDto.getProviderId());
-            if (providerOptional.isPresent()) {
+            Optional<Branch> branchOptional = branchRepository.findById(workTimeDto.getBranchId());
+            if (branchOptional.isPresent()) {
                 WorkTime workTime = new WorkTime();
                 workTime.setStartTime(workTimeDto.getStartTime());
                 workTime.setCloseTime(workTimeDto.getCloseTime());
                 workTime.setDay(workTimeDto.getDay());
-                workTime.setProvider(providerOptional.get());
+                workTime.setBranch(branchOptional.get());
                 workTime = workTimeRepository.save(workTime);
                 return Response.response(workTime, "Work time saved successfully", ResponseType.SUCCESS);
             } else {
-                return Response.response(null, "there is no provider with this id : " + workTimeDto.getProviderId(), ResponseType.NOT_FOUND);
+                return Response.response(null, "there is no branch with this id : " + workTimeDto.getBranchId(), ResponseType.NOT_FOUND);
             }
         } else {
             return Response.response(null, "name is empty", ResponseType.ERROR);
@@ -54,8 +54,8 @@ public class WorkTimeController extends Controller<WorkTime, WorkTimeDto, Long> 
     @Override
     public ResponseEntity<Response<WorkTime>> update(WorkTimeDto workTimeDto) {
         if (workTimeDto.isNotEmpty()) {
-            Optional<Provider> providerOptional = providerRepository.findById(workTimeDto.getProviderId());
-            if (providerOptional.isPresent()) {
+            Optional<Branch> branchOptional = branchRepository.findById(workTimeDto.getBranchId());
+            if (branchOptional.isPresent()) {
                 Optional<WorkTime> workTimeOptional = workTimeRepository.findById(workTimeDto.getId());
                 if (workTimeOptional.isPresent()) {
                     WorkTime workTime = workTimeOptional.get();
@@ -63,14 +63,14 @@ public class WorkTimeController extends Controller<WorkTime, WorkTimeDto, Long> 
                     workTime.setStartTime(workTimeDto.getStartTime());
                     workTime.setCloseTime(workTimeDto.getCloseTime());
                     workTime.setDay(workTimeDto.getDay());
-                    workTime.setProvider(providerOptional.get());
+                    workTime.setBranch(branchOptional.get());
                     workTime = workTimeRepository.save(workTime);
                     return Response.response(workTime, "Work time updated successfully", ResponseType.SUCCESS);
                 } else {
                     return Response.response(null, "there is no work time with this id : " + workTimeDto.getId(), ResponseType.NOT_FOUND);
                 }
             } else {
-                return Response.response(null, "there is no provider with this id : " + workTimeDto.getProviderId(), ResponseType.NOT_FOUND);
+                return Response.response(null, "there is no branch with this id : " + workTimeDto.getBranchId(), ResponseType.NOT_FOUND);
             }
         } else {
             return Response.response(null, "name is empty", ResponseType.ERROR);
@@ -79,8 +79,8 @@ public class WorkTimeController extends Controller<WorkTime, WorkTimeDto, Long> 
 
     @Override
     public ResponseEntity<Response<WorkTime>> delete(Long id) {
-        Optional<WorkTime> carType = workTimeRepository.findById(id);
-        if (carType.isPresent()) {
+        Optional<WorkTime> workTimeOptional = workTimeRepository.findById(id);
+        if (workTimeOptional.isPresent()) {
             workTimeRepository.deleteById(id);
             return Response.response(null, "work time deleted successfully", ResponseType.SUCCESS);
         } else {
@@ -93,8 +93,8 @@ public class WorkTimeController extends Controller<WorkTime, WorkTimeDto, Long> 
         return Response.response(workTimeRepository.findAll(), "All times", ResponseType.SUCCESS);
     }
 
-    @PostMapping("/get-all-work-time/{id}")
-    public ResponseEntity<Response<List<WorkTime>>> getWorkTimeOfProviderById(@PathVariable Long id) {
-        return Response.response(workTimeRepository.findAllByProviderId(id), "All times", ResponseType.SUCCESS);
+    @PostMapping("/get-all-work-time/{branchId}")
+    public ResponseEntity<Response<List<WorkTime>>> getWorkTimeOfBranchById(@PathVariable Long branchId) {
+        return Response.response(workTimeRepository.findAllByBranchId(branchId), "All times", ResponseType.SUCCESS);
     }
 }
