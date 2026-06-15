@@ -4,6 +4,7 @@ package com.doubleclick.wadii.dto;
 import lombok.*;
 
 import java.time.LocalDate;
+import java.util.List;
 
 @Getter
 @Setter
@@ -15,6 +16,7 @@ public class OfferDto {
     private String description;
     private LocalDate endDate;
     private Long providerId;
+    private List<Long> serviceIds;
 
     public boolean isNotEmpty() {
         return title != null && !title.trim().isEmpty()

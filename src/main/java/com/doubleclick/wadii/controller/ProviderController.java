@@ -83,6 +83,11 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
         return Response.response(providerRepository.findAll(), "All providers", ResponseType.SUCCESS);
     }
 
+    @GetMapping("/filter-by-service/{serviceId}")
+    public ResponseEntity<Response<List<Provider>>> filterByService(@PathVariable Long serviceId) {
+        List<Provider> providers = providerRepository.findAllByServiceId(serviceId);
+        return Response.response(providers, "Providers filtered by service", ResponseType.SUCCESS);
+    }
 
     public ResponseEntity<Response<Provider>> getProviderByUserId(Long userId) {
         Optional<Provider> providerOptional = providerRepository.findByUserId(userId);
