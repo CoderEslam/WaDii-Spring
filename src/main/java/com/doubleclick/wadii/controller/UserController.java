@@ -111,6 +111,13 @@ public class UserController extends Controller<User, UserDto, Long> {
         return Response.response(userRepository.findAll(), "All cities", ResponseType.SUCCESS);
     }
 
+    @GetMapping("/me")
+    public ResponseEntity<Response<User>> getMyProfile(Authentication authentication) {
+        return userRepository.findByEmail(authentication.getName())
+                .map(user -> Response.response(user, "Done", ResponseType.SUCCESS))
+                .orElseGet(() -> Response.response(null, "User not found", ResponseType.NOT_FOUND));
+    }
+
     @PostMapping("/upload-image")
     public ResponseEntity<Response<User>> uploadImage(@RequestHeader("Authorization") String
                                                               authHeader, @RequestParam("file") MultipartFile file) {

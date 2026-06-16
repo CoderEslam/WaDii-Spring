@@ -27,6 +27,6 @@ public class SavedOffer {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "offer_id", nullable = false)
-    @JsonIgnoreProperties({"provider", "hibernateLazyInitializer"})
+    @JsonIgnoreProperties({"hibernateLazyInitializer"})
     private Offer offer;
 }

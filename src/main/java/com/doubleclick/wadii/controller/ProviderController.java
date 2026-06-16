@@ -83,6 +83,17 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
         return Response.response(providerRepository.findAll(), "All providers", ResponseType.SUCCESS);
     }
 
+    @GetMapping("/me")
+    public ResponseEntity<Response<Provider>> getMyProviderProfile(Authentication authentication) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not found", ResponseType.NOT_FOUND);
+        }
+        return providerRepository.findByUserId(userOptional.get().getId())
+                .map(provider -> Response.response(provider, "Done", ResponseType.SUCCESS))
+                .orElseGet(() -> Response.response(null, "No provider found for this user", ResponseType.NOT_FOUND));
+    }
+
     @GetMapping("/filter-by-service/{serviceId}")
     public ResponseEntity<Response<List<Provider>>> filterByService(@PathVariable Long serviceId) {
         List<Provider> providers = providerRepository.findAllByServiceId(serviceId);
