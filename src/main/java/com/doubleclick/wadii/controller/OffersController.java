@@ -1,6 +1,5 @@
 package com.doubleclick.wadii.controller;
 
-import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.dto.OfferDto;
 import com.doubleclick.wadii.entities.Offer;
 import com.doubleclick.wadii.entities.Provider;
@@ -104,8 +103,9 @@ public class OffersController extends Controller<Offer, OfferDto, Long> {
     public ResponseEntity<Response<List<Offer>>> readAll() {
         List<Offer> offers = offerRepository.findAll();
         Authentication authentication = getContext().getAuthentication();
-        if (authentication != null && authentication.getPrincipal() instanceof User user) {
-            Set<Long> savedOfferIds = savedOfferRepository.findOfferIdsByUserId(user.getId());
+        if (authentication != null && authentication.getCredentials() instanceof String idStr) {
+            Long userId = Long.parseLong(idStr);
+            Set<Long> savedOfferIds = savedOfferRepository.findOfferIdsByUserId(userId);
             offers.forEach(offer -> offer.setSaved(savedOfferIds.contains(offer.getId())));
         }
         return Response.response(offers, "All offers", ResponseType.SUCCESS);
@@ -115,11 +115,10 @@ public class OffersController extends Controller<Offer, OfferDto, Long> {
     public ResponseEntity<Response<List<Offer>>> filterByService(@PathVariable Long serviceId) {
         List<Offer> offers = offerRepository.findAllByServiceId(serviceId);
         Authentication authentication = getContext().getAuthentication();
-        if (authentication != null && authentication.getPrincipal() instanceof User user) {
-            Set<Long> savedOfferIds = savedOfferRepository.findOfferIdsByUserId(user.getId());
-            offers = offers.stream()
-                    .filter(offer -> !savedOfferIds.contains(offer.getId()))
-                    .toList();
+        if (authentication != null && authentication.getCredentials() instanceof String idStr) {
+            Long userId = Long.parseLong(idStr);
+            Set<Long> savedOfferIds = savedOfferRepository.findOfferIdsByUserId(userId);
+            offers.forEach(offer -> offer.setSaved(savedOfferIds.contains(offer.getId())));
         }
         return Response.response(offers, "Offers filtered by service", ResponseType.SUCCESS);
     }

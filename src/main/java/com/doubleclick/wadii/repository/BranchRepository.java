@@ -9,4 +9,5 @@ public interface BranchRepository extends JpaRepository<Branch, Long> {
 
     List<Branch> findAllByProviderId(Long providerId);
 
+    List<Branch> findByNameContainingIgnoreCaseOrAddressContainingIgnoreCase(String name, String address);
 }

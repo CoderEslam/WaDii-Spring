@@ -12,4 +12,7 @@ public interface OfferRepository extends JpaRepository<Offer, Long> {
     @Query("SELECT DISTINCT o FROM Offer o JOIN o.services s WHERE s.id = :serviceId")
     List<Offer> findAllByServiceId(@Param("serviceId") Long serviceId);
 
+    @Query("SELECT o FROM Offer o WHERE LOWER(o.title) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(o.description) LIKE LOWER(CONCAT('%', :q, '%'))")
+    List<Offer> search(@Param("q") String q);
+
 }
