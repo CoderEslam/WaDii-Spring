@@ -7,7 +7,9 @@ import com.doubleclick.wadii.dto.SparePartsDto;
 import com.doubleclick.wadii.entities.Order;
 import com.doubleclick.wadii.entities.Service;
 import com.doubleclick.wadii.entities.SpareParts;
+import com.doubleclick.wadii.entities.Provider;
 import com.doubleclick.wadii.repository.OrderRepository;
+import com.doubleclick.wadii.repository.ProviderRepository;
 import com.doubleclick.wadii.repository.ServiceRepository;
 import com.doubleclick.wadii.repository.SparePartsRepository;
 import com.doubleclick.wadii.ts.Controller;
@@ -32,6 +34,7 @@ public class OrderController extends Controller<Order, OrderDto, Long> {
     private final OrderRepository orderRepository;
     private final SparePartsRepository sparePartsRepository;
     private final ServiceRepository serviceRepository;
+    private final ProviderRepository providerRepository;
 
     @Override
     public ResponseEntity<Response<Order>> show(Long id) {
@@ -107,5 +110,19 @@ public class OrderController extends Controller<Order, OrderDto, Long> {
         } else {
             return Response.response(null, "this user is not exist", ResponseType.NOT_FOUND);
         }
+    }
+
+    @GetMapping("/show-all-order-of-provider")
+    public ResponseEntity<Response<List<Order>>> getOrdersByProviderToken(Authentication authentication) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not found", ResponseType.NOT_FOUND);
+        }
+        Optional<Provider> providerOptional = providerRepository.findByUserId(userOptional.get().getId());
+        if (providerOptional.isEmpty()) {
+            return Response.response(null, "No provider found for this user", ResponseType.NOT_FOUND);
+        }
+        List<Order> orders = orderRepository.findOrdersByProviderId(providerOptional.get().getId());
+        return Response.response(orders, "All orders for provider", ResponseType.SUCCESS);
     }
 }

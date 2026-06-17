@@ -47,7 +47,7 @@ public class User {
     private List<Follower> following; // <-- users following providers
 
     @OneToOne
-    @JsonIgnoreProperties("user") // Prevents recursive fetching
+    @JsonIgnoreProperties({"user", "hibernateLazyInitializer"}) // Prevents recursive fetching
     private Provider provider;
 
 
