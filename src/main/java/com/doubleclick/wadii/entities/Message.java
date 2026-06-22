@@ -2,6 +2,7 @@ package com.doubleclick.wadii.entities;
 
 import com.doubleclick.wadii.auth.model.User;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -29,6 +30,10 @@ public class Message {
     private String type;
 
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    @JsonProperty("isRead")
+    @Column(name = "is_read", nullable = true)
+    private boolean isRead = false;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "from_id", nullable = false)

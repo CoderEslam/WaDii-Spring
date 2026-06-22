@@ -33,6 +33,17 @@ public class Rate {
     @JoinColumn(name = "user_id", nullable = false)
     @JsonIgnoreProperties({"rates", "orders", "following", "provider"})
     private User user;
+
+    @Override
+    public String toString() {
+        return "Rate{" +
+                "id=" + id +
+                ", comment='" + comment + '\'' +
+                ", rate=" + rate +
+                ", provider=" + provider +
+                ", user=" + user +
+                '}';
+    }
 //    @ManyToOne
 //    @JoinColumn(name = "province_id", nullable = false)
 //    @JsonIgnoreProperties("cities") // Prevents recursive fetching

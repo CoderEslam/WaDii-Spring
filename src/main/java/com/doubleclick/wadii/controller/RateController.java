@@ -49,7 +49,9 @@ public class RateController extends Controller<Rate, RateDto, Long> {
                     rate.setProvider(provider);
                     rate.setUser(optionalUser.get());
                     rate = rateRepository.save(rate);
+                    System.out.println("DEBUG RATE = " + rate);
                     Double avg = rateRepository.findAverageRateByProviderId(provider.getId());
+                    System.out.println("DEBUG RATE = " + avg);
                     provider.setRate(avg != null ? avg : 0.0);
                     providerRepository.save(provider);
                     return Response.response(rate, "Rate saved successfully", ResponseType.SUCCESS);

@@ -7,9 +7,11 @@ import com.doubleclick.wadii.dto.UserDto;
 import com.doubleclick.wadii.entities.City;
 import com.doubleclick.wadii.entities.Role;
 import com.doubleclick.wadii.repository.CityRepository;
+import com.doubleclick.wadii.repository.MessageRepository;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
 import com.doubleclick.wadii.utils.ResponseType;
+import com.doubleclick.wadii.websocket.UserPresenceTracker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -37,7 +39,9 @@ public class UserController extends Controller<User, UserDto, Long> {
     private static final String UPLOAD_DIR = "uploads/";
     private final UserRepository userRepository;
     private final CityRepository cityRepository;
+    private final MessageRepository messageRepository;
     private final JwtUtil jwtUtil;
+    private final UserPresenceTracker userPresenceTracker;
 
 
     @Override
@@ -87,7 +91,7 @@ public class UserController extends Controller<User, UserDto, Long> {
             user.setLastName(userDto.getLastName());
             user.setFcmToken(userDto.getFcmToken());
             user.setPhone(userDto.getPhone());
-            user.setCity(cityOptional.get());
+//            user.setCity(cityOptional.get());
             user = userRepository.save(user);
             return Response.response(user, "User saved successfully", ResponseType.SUCCESS);
         } else {
@@ -119,8 +123,7 @@ public class UserController extends Controller<User, UserDto, Long> {
     }
 
     @PostMapping("/upload-image")
-    public ResponseEntity<Response<User>> uploadImage(@RequestHeader("Authorization") String
-                                                              authHeader, @RequestParam("file") MultipartFile file) {
+    public ResponseEntity<Response<User>> uploadImage(@RequestHeader("Authorization") String authHeader, @RequestParam("file") MultipartFile file) {
         if (file.isEmpty()) {
             Response.response(null, "No file selected.", ResponseType.ERROR);
         }
@@ -152,6 +155,53 @@ public class UserController extends Controller<User, UserDto, Long> {
         } catch (IOException e) {
             return Response.response(null, "Invalid user. " + e.getMessage(), ResponseType.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    @PostMapping("/upload-background-image")
+    public ResponseEntity<Response<User>> uploadBackgroundImage(@RequestHeader("Authorization") String authHeader, @RequestParam("file") MultipartFile file) {
+        if (file.isEmpty()) {
+            Response.response(null, "No file selected.", ResponseType.ERROR);
+        }
+        try {
+            String token = authHeader.replace("Bearer ", "");
+            Optional<User> userOptional = userRepository.findByEmail(jwtUtil.extractEmail(token));
+            if (userOptional.isPresent()) {
+                // Define a base directory to save the uploaded images
+                String uploadDir = System.getProperty("user.dir") + "/uploads";
+                // Create directory if it doesn't exist
+                File dir = new File(uploadDir);
+                if (!dir.exists()) {
+                    dir.mkdirs(); // Create all non-existing parent dirs
+                }
+
+                // Full path to save the file
+                String filePath = uploadDir + File.separator + file.getOriginalFilename();
+                File dest = new File(filePath);
+
+                // Save the file
+                file.transferTo(dest);
+                User user = userOptional.get();
+                user.setBackgroundImage(file.getOriginalFilename());
+                user = userRepository.save(user);
+                return Response.response(user, "File uploaded successfully: ", ResponseType.SUCCESS);
+            } else {
+                return Response.response(null, "Invalid user.", ResponseType.UNAUTHORIZED);
+            }
+        } catch (IOException e) {
+            return Response.response(null, "Invalid user. " + e.getMessage(), ResponseType.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @GetMapping("/{id}/online")
+    public ResponseEntity<Response<Boolean>> isOnline(@PathVariable Long id) {
+        return Response.response(userPresenceTracker.isOnline(id), "Online status", ResponseType.SUCCESS);
+    }
+
+    @GetMapping("/me/unread-count")
+    public ResponseEntity<Response<Long>> getUnreadCount(Authentication authentication) {
+        return userRepository.findByEmail(authentication.getName())
+                .map(user -> Response.response(messageRepository.countUnreadMessages(user.getId()), "Unread count", ResponseType.SUCCESS))
+                .orElseGet(() -> Response.response(null, "User not found", ResponseType.NOT_FOUND));
     }
 
     @GetMapping("/{filename:.+}")

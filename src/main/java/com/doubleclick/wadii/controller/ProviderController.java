@@ -274,6 +274,15 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
         return Response.response(provider, "Provider updated successfully", ResponseType.SUCCESS);
     }
 
+    @GetMapping("/{id}/followers")
+    public ResponseEntity<Response<List<Follower>>> getFollowers(@PathVariable Long id) {
+        if (!providerRepository.existsById(id)) {
+            return Response.response(null, "No provider found with id: " + id, ResponseType.NOT_FOUND);
+        }
+        List<Follower> followers = followersRepository.findByProviderId(id);
+        return Response.response(followers, "Followers list", ResponseType.SUCCESS);
+    }
+
     @DeleteMapping("/unfollow-provider/{id}")
     public ResponseEntity<Response<String>> unfollow(Authentication authentication, @PathVariable Long id) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
