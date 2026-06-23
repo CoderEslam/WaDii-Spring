@@ -14,4 +14,7 @@ public interface ResponseRepository extends JpaRepository<Responses, Long> {
 
     @Query(value = "SELECT * FROM responses r WHERE r.provider_id = :providerId", nativeQuery = true)
     List<Responses> findAllByProviderId(@Param("providerId") Long providerId);
+
+    @Query("SELECT r FROM Responses r JOIN r.order o JOIN o.user u WHERE u.id = :userId")
+    List<Responses> findAllByUserId(@Param("userId") Long userId);
 }

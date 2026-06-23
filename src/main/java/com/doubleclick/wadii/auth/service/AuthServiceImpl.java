@@ -19,6 +19,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
 import java.util.Optional;
 
 @AllArgsConstructor
@@ -47,6 +48,8 @@ public class AuthServiceImpl implements AuthService {
         user.setEmail(authRequest.getEmail());
         user.setPhone(authRequest.getPhone());
         user.setCity(city.get());
+        user.setImage("");
+        user.setBackgroundImage("");
         user.setFcmToken(authRequest.getFcmToken());
         if (authRequest.getUserType() == 0) {
             user.setRole(Role.USER);
@@ -57,6 +60,12 @@ public class AuthServiceImpl implements AuthService {
         user = userRepository.save(user);
         user.setToken(jwtUtil.generateToken(user.getEmail(), user.getId()));
         user = userRepository.save(user);
+        if (user.getOrders() == null) {
+            user.setOrders(Collections.emptyList());
+        }
+        if (user.getFollowing() == null) {
+            user.setFollowing(Collections.emptyList());
+        }
         if (authRequest.getUserType() == 1) {
             Provider provider = new Provider();
             provider.setUser(user);
@@ -87,6 +96,18 @@ public class AuthServiceImpl implements AuthService {
                 }
                 userWithNewToken.setToken(jwtUtil.generateToken(email, userWithNewToken.getId()));
                 userWithNewToken = userRepository.save(userWithNewToken);
+                if (userWithNewToken.getOrders().isEmpty()) {
+                    userWithNewToken.setOrders(Collections.emptyList());
+                }
+                if (userWithNewToken.getFollowing().isEmpty()) {
+                    userWithNewToken.setFollowing(Collections.emptyList());
+                }
+                if (userWithNewToken.getImage() == null) {
+                    userWithNewToken.setImage("");
+                }
+                if (userWithNewToken.getBackgroundImage() == null) {
+                    userWithNewToken.setBackgroundImage("");
+                }
                 return Response.response(userWithNewToken, "success", ResponseType.SUCCESS);
             } else {
                 return Response.response(null, "Invalid password", ResponseType.ERROR);

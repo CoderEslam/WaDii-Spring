@@ -146,6 +146,16 @@ public class ResponseController extends Controller<Responses, ResponseDto, Long>
         return Response.response(responseRepository.findAll(), "All responses", ResponseType.SUCCESS);
     }
 
+    @GetMapping("/get-all-response-of-user")
+    public ResponseEntity<Response<List<Responses>>> findAllByUserId(Authentication authentication) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isPresent()) {
+            return Response.response(responseRepository.findAllByUserId(userOptional.get().getId()), "All responses", ResponseType.SUCCESS);
+        } else {
+            return Response.response(null, "you are no authenticate", ResponseType.SUCCESS);
+        }
+    }
+
 
     @PostMapping("/accept-response")
     public ResponseEntity<Response<Responses>> accept(Authentication authentication, @RequestBody ResponseDto responseDto) {

@@ -146,6 +146,46 @@ public class ProviderRequestController {
         return Response.response(provider, "Request accepted, provider created successfully", ResponseType.SUCCESS);
     }
 
+    @PostMapping("/put-it-user/{userId}")
+    public ResponseEntity<Response<User>> revertProviderToUser(@PathVariable Long userId) {
+        Optional<User> userOptional = userRepository.findById(userId);
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "No user found with id: " + userId, ResponseType.NOT_FOUND);
+        }
+        User user = userOptional.get();
+        if (user.getRole() != Role.PROVIDER) {
+            return Response.response(null, "User is not a provider", ResponseType.ERROR);
+        }
+        Optional<Provider> providerOptional = providerRepository.findByUserId(userId);
+        if (providerOptional.isPresent()) {
+            userRepository.save(user);
+//            providerRepository.delete(providerOptional.get());
+        }
+        user.setRole(Role.USER);
+        userRepository.save(user);
+        return Response.response(user, "Provider reverted to user successfully", ResponseType.SUCCESS);
+    }
+
+    @PostMapping("/put-it-provider/{userId}")
+    public ResponseEntity<Response<User>> revertUserToProvider(@PathVariable Long userId) {
+        Optional<User> userOptional = userRepository.findById(userId);
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "No user found with id: " + userId, ResponseType.NOT_FOUND);
+        }
+        User user = userOptional.get();
+        if (user.getRole() != Role.USER) {
+            return Response.response(null, "User is not a User", ResponseType.ERROR);
+        }
+        Optional<Provider> providerOptional = providerRepository.findByUserId(userId);
+        if (providerOptional.isPresent()) {
+            user.setProvider(providerOptional.get());
+            user.setRole(Role.PROVIDER);
+            userRepository.save(user);
+            return Response.response(user, "Provider reverted to user successfully", ResponseType.SUCCESS);
+        }
+        return Response.response(user, "you can't put it provider because there is no id of provider binding with it", ResponseType.SUCCESS);
+    }
+
     private String saveFile(MultipartFile file, String uploadDir) throws IOException {
         String filename = System.currentTimeMillis() + "_" + file.getOriginalFilename();
         File dest = new File(uploadDir + File.separator + filename);
