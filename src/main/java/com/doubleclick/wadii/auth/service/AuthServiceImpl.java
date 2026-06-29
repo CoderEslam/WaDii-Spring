@@ -48,8 +48,8 @@ public class AuthServiceImpl implements AuthService {
         user.setEmail(authRequest.getEmail());
         user.setPhone(authRequest.getPhone());
         user.setCity(city.get());
-        user.setImage("");
-        user.setBackgroundImage("");
+        user.setImage("download.jpeg");
+        user.setBackgroundImage("download.jpeg");
         user.setFcmToken(authRequest.getFcmToken());
         if (authRequest.getUserType() == 0) {
             user.setRole(Role.USER);
@@ -74,6 +74,9 @@ public class AuthServiceImpl implements AuthService {
             provider.setName(authRequest.getProviderName());
             provider = providerRepository.save(provider);
             return Response.response(user, "provider registered successfully", ResponseType.SUCCESS);
+        }
+        if (user.getProvider() == null) {
+//            user.setProvider(new Provider(0L));
         }
         return Response.response(user, "User registered successfully", ResponseType.SUCCESS);
     }
@@ -103,10 +106,13 @@ public class AuthServiceImpl implements AuthService {
                     userWithNewToken.setFollowing(Collections.emptyList());
                 }
                 if (userWithNewToken.getImage() == null) {
-                    userWithNewToken.setImage("");
+                    userWithNewToken.setImage("download.jpeg");
                 }
                 if (userWithNewToken.getBackgroundImage() == null) {
-                    userWithNewToken.setBackgroundImage("");
+                    userWithNewToken.setBackgroundImage("download.jpeg");
+                }
+                if (userWithNewToken.getProvider() == null) {
+//                    userWithNewToken.setProvider(new Provider(0L));
                 }
                 return Response.response(userWithNewToken, "success", ResponseType.SUCCESS);
             } else {

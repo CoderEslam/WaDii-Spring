@@ -43,7 +43,7 @@ public class ProvinceController extends Controller<Province, ProvinceDto, Long> 
             }
             Province province = new Province();
             province.setName(dto.getName());
-            province.setCountryId(country.get());
+            province.setCountry(country.get());
             province = provinceRepository.save(province);
             return Response.response(province, "Province saved successfully", ResponseType.SUCCESS);
         } else {
@@ -64,11 +64,11 @@ public class ProvinceController extends Controller<Province, ProvinceDto, Long> 
             }
             Province province = existing.get();
             province.setName(dto.getName());
-            province.setCountryId(country.get());
+            province.setCountry(country.get());
             province = provinceRepository.save(province);
             return Response.response(province, "Province updated successfully", ResponseType.SUCCESS);
         } else {
-            return Response.response(null, "Name or countryId is empty", ResponseType.ERROR);
+            return Response.response(null, "Name or country Id is empty", ResponseType.ERROR);
         }
     }
 

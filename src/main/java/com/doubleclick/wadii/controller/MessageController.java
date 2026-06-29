@@ -127,7 +127,8 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
             Authentication authentication,
             @PathVariable Long userId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size
+    ) {
         Optional<User> currentUserOptional = userRepository.findByEmail(authentication.getName());
         if (currentUserOptional.isEmpty()) {
             return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);

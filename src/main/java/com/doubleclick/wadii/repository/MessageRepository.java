@@ -22,12 +22,14 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
     // All messages between two users (a conversation), in chronological order.
     @Query("SELECT m FROM Message m " +
-           "WHERE (m.fromUser.id = :u1 AND m.toUser.id = :u2) " +
-           "   OR (m.fromUser.id = :u2 AND m.toUser.id = :u1) " +
-           "ORDER BY m.createdAt ASC")
-    Page<Message> findConversation(@Param("u1") Long user1Id,
-                                   @Param("u2") Long user2Id,
-                                   Pageable pageable);
+            "WHERE (m.fromUser.id = :u1 AND m.toUser.id = :u2) " +
+            "   OR (m.fromUser.id = :u2 AND m.toUser.id = :u1) " +
+            "ORDER BY m.createdAt ASC")
+    Page<Message> findConversation(
+            @Param("u1") Long user1Id,
+            @Param("u2") Long user2Id,
+            Pageable pageable
+    );
 
     // Returns the sender's ID only if the message is unread and addressed to toUserId.
     @Query("SELECT m.fromUser.id FROM Message m WHERE m.id = :id AND m.toUser.id = :toUserId AND m.isRead = false")

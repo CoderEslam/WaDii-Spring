@@ -22,6 +22,11 @@ public class City {
 
     @ManyToOne
     @JoinColumn(name = "province_id")
-    private Province provinceId;
+    private Province province;
 
+    public City(Long id) {
+        this.id = id;
+        this.name = "";
+        this.province = new Province(0L);
+    }
 }

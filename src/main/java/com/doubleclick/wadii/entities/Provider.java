@@ -9,6 +9,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.Collections;
 import java.util.List;
 
 @Entity
@@ -63,4 +64,18 @@ public class Provider {
     private List<Responses> responses;
 
 
+//    public Provider(Long id) {
+//        this.id = id;
+//        this.rate = 0.0;
+//        this.followersCount = 0L;
+//        this.name = "";
+//        this.branches = Collections.emptyList();
+//        this.services = Collections.emptyList();
+//        this.rates = Collections.emptyList();
+//        this.links = Collections.emptyList();
+//        this.offers = Collections.emptyList();
+//        this.followers = Collections.emptyList();
+//        this.user = new User(0L);
+//        this.responses = Collections.emptyList();
+//    }
 }

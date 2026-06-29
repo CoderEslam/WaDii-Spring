@@ -22,6 +22,12 @@ public class Province {
 
     @ManyToOne
     @JoinColumn(name = "country_id")
-    private Country countryId;
+    private Country country;
 
+
+    public Province(Long id) {
+        this.id = id;
+        this.name = "";
+        this.country = new Country(0L);
+    }
 }

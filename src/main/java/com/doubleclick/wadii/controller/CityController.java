@@ -43,7 +43,7 @@ public class CityController extends Controller<City, CityDto, Long> {
             }
             City city = new City();
             city.setName(dto.getName());
-            city.setProvinceId(province.get());
+            city.setProvince(province.get());
             city = cityRepository.save(city);
             return Response.response(city, "City saved successfully", ResponseType.SUCCESS);
         } else {
@@ -64,7 +64,7 @@ public class CityController extends Controller<City, CityDto, Long> {
             }
             City city = existing.get();
             city.setName(dto.getName());
-            city.setProvinceId(province.get());
+            city.setProvince(province.get());
             city = cityRepository.save(city);
             return Response.response(city, "City updated successfully", ResponseType.SUCCESS);
         } else {

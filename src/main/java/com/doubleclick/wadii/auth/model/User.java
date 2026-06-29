@@ -9,6 +9,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 @Entity
@@ -62,4 +64,23 @@ public class User {
     @ManyToOne
     @JoinColumn(name = "city_id")
     private City city;
+
+//    public User(Long id) {
+//        this.id = id;
+//        this.firstName = "";
+//        this.lastName = "";
+//        this.email = "";
+//        this.password = "";
+//        this.token = "";
+//        this.fcmToken = "";
+//        this.image = "download.jpeg";
+//        this.backgroundImage = "download.jpeg";
+//        this.phone = "";
+//        this.role = Role.USER;
+//        this.rates = Collections.emptyList();
+//        this.following = Collections.emptyList();
+//        this.provider = new Provider(0L);
+//        this.orders = Collections.emptyList();
+//        this.city = new City(0L);
+//    }
 }
