@@ -23,7 +23,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
-        config.enableSimpleBroker("/queue");
+        config.enableSimpleBroker("/queue", "/topic");
         config.setUserDestinationPrefix("/user");
         config.setApplicationDestinationPrefixes("/app");
     }
@@ -41,15 +41,15 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             }
         };
 
-        // SockJS endpoint — for browsers / production clients
+        // SockJS endpoint — for browsers
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("*")
                 .addInterceptors(jwtHandshakeInterceptor)
                 .setHandshakeHandler(handshakeHandler)
                 .withSockJS();
 
-        // Plain WebSocket endpoint — for Postman / native clients
-        registry.addEndpoint("/ws-native")
+        // Native WebSocket — ws://host/web-socket/{userId}?token=JWT
+        registry.addEndpoint("/web-socket/*")
                 .setAllowedOriginPatterns("*")
                 .addInterceptors(jwtHandshakeInterceptor)
                 .setHandshakeHandler(handshakeHandler);
