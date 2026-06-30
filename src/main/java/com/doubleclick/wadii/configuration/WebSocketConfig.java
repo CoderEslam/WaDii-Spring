@@ -47,11 +47,5 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 .addInterceptors(jwtHandshakeInterceptor)
                 .setHandshakeHandler(handshakeHandler)
                 .withSockJS();
-
-        // Native WebSocket — ws://host/web-socket/{userId}?token=JWT
-        registry.addEndpoint("/web-socket/*")
-                .setAllowedOriginPatterns("*")
-                .addInterceptors(jwtHandshakeInterceptor)
-                .setHandshakeHandler(handshakeHandler);
     }
 }

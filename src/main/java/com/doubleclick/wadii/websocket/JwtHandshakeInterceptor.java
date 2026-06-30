@@ -17,8 +17,12 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
     private final JwtUtil jwtUtil;
 
     @Override
-    public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
-                                   WebSocketHandler wsHandler, Map<String, Object> attributes) {
+    public boolean beforeHandshake(
+            ServerHttpRequest request,
+            ServerHttpResponse response,
+            WebSocketHandler wsHandler,
+            Map<String, Object> attributes
+    ) {
         String token = extractTokenFromQuery(request.getURI().getQuery());
         if (token == null) return false;
         try {
@@ -40,8 +44,12 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
     }
 
     @Override
-    public void afterHandshake(ServerHttpRequest request, ServerHttpResponse response,
-                               WebSocketHandler wsHandler, Exception exception) {
+    public void afterHandshake(
+            ServerHttpRequest request,
+            ServerHttpResponse response,
+            WebSocketHandler wsHandler,
+            Exception exception
+    ) {
     }
 
     private String extractTokenFromQuery(String query) {
@@ -54,7 +62,9 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
         return null;
     }
 
-    /** Extracts the userId segment from paths like /web-socket/42 or /web-socket/42/... */
+    /**
+     * Extracts the userId segment from paths like /web-socket/42 or /web-socket/42/...
+     */
     private String extractUserIdFromPath(String path) {
         if (path == null) return null;
         String[] segments = path.split("/");
