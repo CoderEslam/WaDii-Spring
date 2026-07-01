@@ -130,7 +130,6 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        System.out.println("Current-User: " + authentication.getName());
         Optional<User> currentUserOptional = userRepository.findByEmail(authentication.getName());
         if (currentUserOptional.isEmpty()) {
             return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
@@ -139,17 +138,11 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
         if (otherUserOptional.isEmpty()) {
             return Response.response(null, "there is no user with this id : " + userId, ResponseType.NOT_FOUND);
         }
-        System.out.println("Current User: " + currentUserOptional.get().getId());
-        System.out.println("Other User: " + userId);
-
         Page<Message> conversation = messageRepository.findConversation(
                 currentUserOptional.get().getId(),
                 userId,
                 PageRequest.of(page, size)
         );
-        System.out.println(TAG + conversation.getTotalElements());
-        System.out.println(TAG + conversation.getContent().size());
-        System.out.println(TAG + conversation.getTotalPages());
         return Response.response(conversation, "Conversation", ResponseType.SUCCESS);
     }
 
