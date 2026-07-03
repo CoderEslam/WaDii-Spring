@@ -79,7 +79,6 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         Optional<User> fromOpt = userRepository.findById(fromUserId);
         Optional<User> toOpt = userRepository.findById(payload.getToUserId());
         if (fromOpt.isEmpty() || toOpt.isEmpty()) return;
-        System.out.println(TAG + " 1 " + payload);
         User from = fromOpt.get();
         User to = toOpt.get();
         String type = (payload.getType() != null && !payload.getType().isBlank())
@@ -99,8 +98,6 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 Map.of("event", "MESSAGE", "data", msg));
 
         // Deliver to recipient (if online) and echo to sender
-        System.out.println(TAG + " 2 "  + payload.getToUserId() + " = " + json);
-        System.out.println(TAG + " 3 " + fromUserId + " = " +  json);
         send(payload.getToUserId(), json);
         send(fromUserId, json);
     }
