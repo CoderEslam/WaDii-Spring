@@ -52,7 +52,7 @@ public class ProvinceController extends Controller<Province, ProvinceDto, Long> 
     }
 
     @Override
-    public ResponseEntity<Response<Province>> update(@RequestBody ProvinceDto dto) {
+    public ResponseEntity<Response<Province>> update(Authentication authentication, @RequestBody ProvinceDto dto) {
         if (dto.isNotEmpty()) {
             Optional<Province> existing = provinceRepository.findById(dto.getId());
             if (existing.isEmpty()) {
@@ -73,7 +73,7 @@ public class ProvinceController extends Controller<Province, ProvinceDto, Long> 
     }
 
     @Override
-    public ResponseEntity<Response<Province>> delete(Long id) {
+    public ResponseEntity<Response<Province>> delete(Authentication authentication, Long id) {
         if (provinceRepository.existsById(id)) {
             provinceRepository.deleteById(id);
             return Response.response(null, "Province deleted successfully", ResponseType.SUCCESS);

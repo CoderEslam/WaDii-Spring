@@ -1,8 +1,11 @@
 package com.doubleclick.wadii.controller;
 
+import com.doubleclick.wadii.auth.model.User;
+import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.OfferDto;
 import com.doubleclick.wadii.entities.Offer;
 import com.doubleclick.wadii.entities.Provider;
+import com.doubleclick.wadii.entities.Role;
 import com.doubleclick.wadii.repository.OfferRepository;
 import com.doubleclick.wadii.repository.ProviderRepository;
 import com.doubleclick.wadii.repository.SavedOfferRepository;
@@ -30,6 +33,7 @@ public class OffersController extends Controller<Offer, OfferDto, Long> {
     private final ProviderRepository providerRepository;
     private final SavedOfferRepository savedOfferRepository;
     private final ServiceRepository serviceRepository;
+    private final UserRepository userRepository;
 
     @Override
     public ResponseEntity<Response<Offer>> show(Long id) {
@@ -40,6 +44,13 @@ public class OffersController extends Controller<Offer, OfferDto, Long> {
 
     @Override
     public ResponseEntity<Response<Offer>> insert(Authentication authentication, @RequestBody OfferDto offerDto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.PROVIDER) {
+            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+        }
         if (offerDto.isNotEmpty()) {
             Optional<Provider> provinceOptional = providerRepository.findById(offerDto.getProviderId());
             if (provinceOptional.isPresent()) {
@@ -62,7 +73,14 @@ public class OffersController extends Controller<Offer, OfferDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Offer>> update(OfferDto offerDto) {
+    public ResponseEntity<Response<Offer>> update(Authentication authentication, OfferDto offerDto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.PROVIDER) {
+            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+        }
         if (offerDto.getId() == null) {
             return Response.response(null, "offer id is required", ResponseType.ERROR);
         }
@@ -89,7 +107,14 @@ public class OffersController extends Controller<Offer, OfferDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Offer>> delete(Long id) {
+    public ResponseEntity<Response<Offer>> delete(Authentication authentication, Long id) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.PROVIDER) {
+            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+        }
         Optional<Offer> offerOptional = offerRepository.findById(id);
         if (offerOptional.isPresent()) {
             offerRepository.deleteById(id);

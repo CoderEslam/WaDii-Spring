@@ -69,6 +69,13 @@ public class ResponseController extends Controller<Responses, ResponseDto, Long>
 //    }
     @Override
     public ResponseEntity<Response<Responses>> insert(Authentication authentication, @RequestBody ResponseDto responseDto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
+        }
+        if (userOptional.get().getRole() != Role.PROVIDER) {
+            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+        }
         if (responseDto.isNotEmpty()) {
             Provider provider = providerRepository.findById(responseDto.getProviderId())
                     .orElseThrow(() -> new RuntimeException("No provider with id: " + responseDto.getProviderId()));
@@ -106,34 +113,71 @@ public class ResponseController extends Controller<Responses, ResponseDto, Long>
     }
 
     @Override
-    public ResponseEntity<Response<Responses>> update(ResponseDto responseDto) {
-//        if (linksDto.isNotEmpty()) {
-//            Optional<Provider> providerOptional = providerRepository.findById(linksDto.getProviderId());
-//            if (providerOptional.isPresent()) {
-//                Optional<Links> linkOptional = linksRepository.findById(linksDto.getId());
-//                if (linkOptional.isPresent()) {
-//                    Links link = linkOptional.get();
-//                    link.setId(link.getId());
-//                    link.setLink(linksDto.getLink());
-//                    link.setProvider(providerOptional.get());
-//                    link = linksRepository.save(link);
-//                    return Response.response(link, "Link updated successfully", ResponseType.SUCCESS);
-//                } else {
-//                    return Response.response(null, "there is no link with this id : " + linksDto.getId(), ResponseType.NOT_FOUND);
-//                }
-//            } else {
-//                return Response.response(null, "there is no provider with this id : " + linksDto.getProviderId(), ResponseType.NOT_FOUND);
-//            }
-//        } else {
-//            return Response.response(null, "name is empty", ResponseType.ERROR);
-//        }
-        return null;
+    public ResponseEntity<Response<Responses>> update(Authentication authentication, ResponseDto responseDto) {
+        if (responseDto.getId() == null) {
+            return Response.response(null, "response id is required", ResponseType.ERROR);
+        }
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
+        }
+        if (userOptional.get().getRole() != Role.PROVIDER) {
+            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+        }
+        Optional<Responses> responsesOptional = responseRepository.findById(responseDto.getId());
+        if (responsesOptional.isEmpty()) {
+            return Response.response(null, "there is no response with this id : " + responseDto.getId(), ResponseType.NOT_FOUND);
+        }
+        Responses responses = responsesOptional.get();
+        if (!responses.getProvider().getUser().getId().equals(userOptional.get().getId())) {
+            return Response.response(null, "You can only update responses you created", ResponseType.SUCCESS);
+        }
+        if (responseDto.getComment() != null && !responseDto.getComment().trim().isEmpty()) {
+            responses.setComment(responseDto.getComment());
+        }
+        if (responseDto.getLatitude() != null) responses.setLatitude(responseDto.getLatitude());
+        if (responseDto.getLongitude() != null) responses.setLongitude(responseDto.getLongitude());
+        if (responseDto.getProviderId() != null) {
+            Optional<Provider> providerOptional = providerRepository.findById(responseDto.getProviderId());
+            if (providerOptional.isEmpty()) {
+                return Response.response(null, "there is no provider with this id : " + responseDto.getProviderId(), ResponseType.NOT_FOUND);
+            }
+            responses.setProvider(providerOptional.get());
+        }
+        responses = responseRepository.save(responses);
+
+        List<SparePartsPriceDto> priceDtos = responseDto.getSparePartsPrice();
+        if (priceDtos != null && !priceDtos.isEmpty()) {
+            if (responses.getSparePartsPrices() != null && !responses.getSparePartsPrices().isEmpty()) {
+                sparePartsPriceRepository.deleteAll(responses.getSparePartsPrices());
+            }
+            List<SparePartsPrice> sparePartsPriceList = new ArrayList<>();
+            for (SparePartsPriceDto sparePartsPriceDto : priceDtos) {
+                SparePartsPrice sparePartsPrice = new SparePartsPrice();
+                sparePartsPrice.setResponse(responses);
+                sparePartsPrice.setPrice(sparePartsPriceDto.getPrice());
+                sparePartsPrice.setSparePart(new SpareParts(sparePartsPriceDto.getId()));
+                sparePartsPriceList.add(sparePartsPrice);
+            }
+            sparePartsPriceList = sparePartsPriceRepository.saveAll(sparePartsPriceList);
+            responses.setSparePartsPrices(sparePartsPriceList);
+            responses = responseRepository.save(responses);
+        }
+
+        return Response.response(responses, "Response updated successfully", ResponseType.SUCCESS);
     }
 
     @Override
-    public ResponseEntity<Response<Responses>> delete(Long id) {
+    public ResponseEntity<Response<Responses>> delete(Authentication authentication, Long id) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
+        }
         Optional<Responses> responsesOptional = responseRepository.findById(id);
         if (responsesOptional.isPresent()) {
+            if (!responsesOptional.get().getProvider().getUser().getId().equals(userOptional.get().getId())) {
+                return Response.response(null, "You can only delete responses you created", ResponseType.SUCCESS);
+            }
             responseRepository.deleteById(id);
             return Response.response(null, "response deleted successfully", ResponseType.SUCCESS);
         } else {

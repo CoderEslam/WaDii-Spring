@@ -51,7 +51,7 @@ public class UserNotificationController extends Controller<UserNotification, Use
     }
 
     @Override
-    public ResponseEntity<Response<UserNotification>> update(@RequestBody UserNotificationDto dto) {
+    public ResponseEntity<Response<UserNotification>> update(Authentication authentication, @RequestBody UserNotificationDto dto) {
         if (dto.getId() == null) {
             return Response.response(null, "notification id is required", ResponseType.ERROR);
         }
@@ -74,7 +74,7 @@ public class UserNotificationController extends Controller<UserNotification, Use
     }
 
     @Override
-    public ResponseEntity<Response<UserNotification>> delete(Long id) {
+    public ResponseEntity<Response<UserNotification>> delete(Authentication authentication, Long id) {
         Optional<UserNotification> notificationOptional = userNotificationRepository.findById(id);
         if (notificationOptional.isPresent()) {
             userNotificationRepository.deleteById(id);

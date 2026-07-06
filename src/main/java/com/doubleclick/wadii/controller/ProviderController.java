@@ -63,12 +63,12 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
     }
 
     @Override
-    public ResponseEntity<Response<Provider>> update(ProviderDto providerDto) {
+    public ResponseEntity<Response<Provider>> update(Authentication authentication, ProviderDto providerDto) {
         return null;
     }
 
     @Override
-    public ResponseEntity<Response<Provider>> delete(Long id) {
+    public ResponseEntity<Response<Provider>> delete(Authentication authentication, Long id) {
         Optional<Provider> providerOptional = providerRepository.findById(id);
         if (providerOptional.isPresent()) {
             providerRepository.deleteById(id);

@@ -1,7 +1,10 @@
 package com.doubleclick.wadii.controller;
 
+import com.doubleclick.wadii.auth.model.User;
+import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.CountryDto;
 import com.doubleclick.wadii.entities.Country;
+import com.doubleclick.wadii.entities.Role;
 import com.doubleclick.wadii.repository.CountryRepository;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
@@ -20,6 +23,7 @@ import java.util.Optional;
 public class CountryController extends Controller<Country, CountryDto, Long> {
 
     private final CountryRepository countryRepository;
+    private final UserRepository userRepository;
 
     @Override
     public ResponseEntity<Response<Country>> show(Long id) {
@@ -30,6 +34,13 @@ public class CountryController extends Controller<Country, CountryDto, Long> {
 
     @Override
     public ResponseEntity<Response<Country>> insert(Authentication authentication, @RequestBody CountryDto dto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         if (dto.isNotEmpty()) {
             Optional<Country> existing = countryRepository.findByName(dto.getName());
             if (existing.isEmpty()) {
@@ -46,7 +57,14 @@ public class CountryController extends Controller<Country, CountryDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Country>> update(@RequestBody CountryDto dto) {
+    public ResponseEntity<Response<Country>> update(Authentication authentication, @RequestBody CountryDto dto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         if (dto.isNotEmpty()) {
             Optional<Country> existing = countryRepository.findById(dto.getId());
             if (existing.isPresent()) {
@@ -63,7 +81,14 @@ public class CountryController extends Controller<Country, CountryDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Country>> delete(Long id) {
+    public ResponseEntity<Response<Country>> delete(Authentication authentication, Long id) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         if (countryRepository.existsById(id)) {
             countryRepository.deleteById(id);
             return Response.response(null, "Country deleted successfully", ResponseType.SUCCESS);

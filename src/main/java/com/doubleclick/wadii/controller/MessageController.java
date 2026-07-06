@@ -67,15 +67,22 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Message>> update(@RequestBody MessageDto messageDto) {
+    public ResponseEntity<Response<Message>> update(Authentication authentication, @RequestBody MessageDto messageDto) {
         if (messageDto.getId() == null) {
             return Response.response(null, "message id is required", ResponseType.ERROR);
+        }
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
         }
         Optional<Message> messageOptional = messageRepository.findById(messageDto.getId());
         if (messageOptional.isEmpty()) {
             return Response.response(null, "there is no message with this id : " + messageDto.getId(), ResponseType.NOT_FOUND);
         }
         Message message = messageOptional.get();
+        if (!message.getFromUser().getId().equals(userOptional.get().getId())) {
+            return Response.response(null, "You can only update messages you created", ResponseType.SUCCESS);
+        }
         if (messageDto.getText() != null && !messageDto.getText().trim().isEmpty()) {
             message.setText(messageDto.getText());
         }
@@ -87,9 +94,16 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Message>> delete(Long id) {
+    public ResponseEntity<Response<Message>> delete(Authentication authentication, Long id) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
+        }
         Optional<Message> messageOptional = messageRepository.findById(id);
         if (messageOptional.isPresent()) {
+            if (!messageOptional.get().getFromUser().getId().equals(userOptional.get().getId())) {
+                return Response.response(null, "You can only delete messages you created", ResponseType.SUCCESS);
+            }
             messageRepository.deleteById(id);
             return Response.response(null, "message deleted successfully", ResponseType.SUCCESS);
         } else {

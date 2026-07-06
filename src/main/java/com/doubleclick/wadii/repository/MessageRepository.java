@@ -33,7 +33,7 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
     FROM Message m
     WHERE (m.fromUser.id = :u1 AND m.toUser.id = :u2)
        OR (m.fromUser.id = :u2 AND m.toUser.id = :u1)
-""")
+    """)
     Page<Message> findConversation(
             @Param("u1") Long user1Id,
             @Param("u2") Long user2Id,

@@ -82,7 +82,7 @@ public class UserController extends Controller<User, UserDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<User>> update(UserDto userDto) {
+    public ResponseEntity<Response<User>> update(Authentication authentication, UserDto userDto) {
         Optional<User> userOptional = userRepository.findById(userDto.getId());
         Optional<City> cityOptional = cityRepository.findById(userDto.getCityId());
         if (userOptional.isPresent() && cityOptional.isPresent()) {
@@ -100,7 +100,7 @@ public class UserController extends Controller<User, UserDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<User>> delete(Long id) {
+    public ResponseEntity<Response<User>> delete(Authentication authentication, Long id) {
         Optional<User> userOptional = userRepository.findById(id);
         if (userOptional.isPresent()) {
             userRepository.deleteById(id);

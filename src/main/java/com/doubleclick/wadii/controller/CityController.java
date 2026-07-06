@@ -1,8 +1,11 @@
 package com.doubleclick.wadii.controller;
 
+import com.doubleclick.wadii.auth.model.User;
+import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.CityDto;
 import com.doubleclick.wadii.entities.City;
 import com.doubleclick.wadii.entities.Province;
+import com.doubleclick.wadii.entities.Role;
 import com.doubleclick.wadii.repository.CityRepository;
 import com.doubleclick.wadii.repository.ProvinceRepository;
 import com.doubleclick.wadii.ts.Controller;
@@ -23,6 +26,7 @@ public class CityController extends Controller<City, CityDto, Long> {
 
     private final CityRepository cityRepository;
     private final ProvinceRepository provinceRepository;
+    private final UserRepository userRepository;
 
     @Override
     public ResponseEntity<Response<City>> show(Long id) {
@@ -33,6 +37,13 @@ public class CityController extends Controller<City, CityDto, Long> {
 
     @Override
     public ResponseEntity<Response<City>> insert(Authentication authentication, @RequestBody CityDto dto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         if (dto.isNotEmpty()) {
             Optional<Province> province = provinceRepository.findById(dto.getProvinceId());
             if (province.isEmpty()) {
@@ -52,7 +63,14 @@ public class CityController extends Controller<City, CityDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<City>> update(@RequestBody CityDto dto) {
+    public ResponseEntity<Response<City>> update(Authentication authentication, @RequestBody CityDto dto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         if (dto.isNotEmpty()) {
             Optional<City> existing = cityRepository.findById(dto.getId());
             if (existing.isEmpty()) {
@@ -73,7 +91,14 @@ public class CityController extends Controller<City, CityDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<City>> delete(Long id) {
+    public ResponseEntity<Response<City>> delete(Authentication authentication, Long id) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         if (cityRepository.existsById(id)) {
             cityRepository.deleteById(id);
             return Response.response(null, "City deleted successfully", ResponseType.SUCCESS);

@@ -12,6 +12,7 @@ import com.doubleclick.wadii.utils.ResponseType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -100,7 +101,14 @@ public class ProviderRequestController {
     }
 
     @PostMapping("/accept/{id}")
-    public ResponseEntity<Response<Provider>> acceptRequest(@PathVariable Long id) {
+    public ResponseEntity<Response<Provider>> acceptRequest(Authentication authentication, @PathVariable Long id) {
+        Optional<User> adminOptional = userRepository.findByEmail(authentication.getName());
+        if (adminOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (adminOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         Optional<ProviderRequest> requestOptional = providerRequestRepository.findById(id);
         if (requestOptional.isEmpty()) {
             return Response.response(null, "No request found with id: " + id, ResponseType.NOT_FOUND);
@@ -144,6 +152,25 @@ public class ProviderRequestController {
         providerRequestRepository.deleteById(id);
 
         return Response.response(provider, "Request accepted, provider created successfully", ResponseType.SUCCESS);
+    }
+
+    @PostMapping("/reject/{id}")
+    public ResponseEntity<Response<ProviderRequest>> rejectRequest(Authentication authentication, @PathVariable Long id) {
+        Optional<User> adminOptional = userRepository.findByEmail(authentication.getName());
+        if (adminOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (adminOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
+        Optional<ProviderRequest> requestOptional = providerRequestRepository.findById(id);
+        if (requestOptional.isEmpty()) {
+            return Response.response(null, "No request found with id: " + id, ResponseType.NOT_FOUND);
+        }
+        ProviderRequest providerRequest = requestOptional.get();
+        providerRequestRepository.deleteById(id);
+
+        return Response.response(providerRequest, "Request rejected successfully", ResponseType.SUCCESS);
     }
 
     @PostMapping("/put-it-user/{userId}")

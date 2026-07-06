@@ -59,6 +59,9 @@ dependencies {
 
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.3'
 
+    //agora voice/video calling — RTC token generation
+    implementation 'io.agora:authentication:2.1.3'
+
 }
 
 tasks.named('test') {

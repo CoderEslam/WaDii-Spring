@@ -1,6 +1,8 @@
 package com.doubleclick.wadii.notification;
 
+import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.auth.repository.UserRepository;
+import com.doubleclick.wadii.dto.CallSignal;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.gson.JsonObject;
 import lombok.RequiredArgsConstructor;
@@ -76,6 +78,39 @@ public class NotificationService {
         // Make API request with headers
         ResponseEntity<String> response = restTemplate.exchange(FCM_SEND_ENDPOINT, HttpMethod.POST, entity, String.class);
         return response.getBody();
+    }
+
+    /**
+     * Data-only push used as a fallback when a call-signaling event (e.g. CALL_REJECT) can't be
+     * delivered over an open websocket session. No visible "notification" block is sent since the
+     * client handles these events programmatically rather than showing a system tray entry.
+     */
+    public void sendCallSignalNotification(Long userId, String event, CallSignal signal) {
+        User user = userRepository.findById(userId).orElse(null);
+        if (user == null || user.getFcmToken() == null || user.getFcmToken().isBlank()) return;
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(getAccessToken());
+        headers.set("Content-Type", "application/json");
+        headers.set("Accept", "application/json");
+
+        JsonObject data = new JsonObject();
+        data.addProperty("event", event);
+        data.addProperty("channelName", signal.getChannelName());
+        if (signal.getCallType() != null) data.addProperty("callType", signal.getCallType());
+        if (signal.getFromUserId() != null) data.addProperty("fromUserId", String.valueOf(signal.getFromUserId()));
+        if (signal.getFromUserName() != null) data.addProperty("fromUserName", signal.getFromUserName());
+        if (signal.getFromUserImage() != null) data.addProperty("fromUserImage", signal.getFromUserImage());
+
+        JsonObject message = new JsonObject();
+        message.addProperty("token", user.getFcmToken());
+        message.add("data", data);
+
+        JsonObject body = new JsonObject();
+        body.add("message", message);
+
+        HttpEntity<String> entity = new HttpEntity<>(body.toString(), headers);
+        restTemplate.exchange(FCM_SEND_ENDPOINT, HttpMethod.POST, entity, String.class);
     }
 
 }

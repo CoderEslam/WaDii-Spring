@@ -1,8 +1,11 @@
 package com.doubleclick.wadii.controller;
 
+import com.doubleclick.wadii.auth.model.User;
+import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.AdvertisementDto;
 import com.doubleclick.wadii.entities.Advertisement;
 import com.doubleclick.wadii.entities.AdvertisementStatus;
+import com.doubleclick.wadii.entities.Role;
 import com.doubleclick.wadii.repository.AdvertisementRepository;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
@@ -22,6 +25,7 @@ import java.util.Optional;
 public class AdvertisementController extends Controller<Advertisement, AdvertisementDto, Long> {
 
     private final AdvertisementRepository advertisementRepository;
+    private final UserRepository userRepository;
 
     @Override
     public ResponseEntity<Response<Advertisement>> show(Long id) {
@@ -32,48 +36,73 @@ public class AdvertisementController extends Controller<Advertisement, Advertise
 
     @Override
     public ResponseEntity<Response<Advertisement>> insert(Authentication authentication, @RequestBody AdvertisementDto dto) {
-        if (dto.getTitle() == null || dto.getTitle().trim().isEmpty()) {
-            return Response.response(null, "Advertisement title is required", ResponseType.ERROR);
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isPresent()) {
+            if (userOptional.get().getRole() == Role.ADMIN) {
+                if (dto.getTitle() == null || dto.getTitle().trim().isEmpty()) {
+                    return Response.response(null, "Advertisement title is required", ResponseType.ERROR);
+                }
+                Advertisement advertisement = new Advertisement();
+                advertisement.setTitle(dto.getTitle());
+                advertisement.setDescription(dto.getDescription());
+                advertisement.setImageUrl(dto.getImageUrl());
+                advertisement.setTargetUrl(dto.getTargetUrl());
+                advertisement.setAdvertiserName(dto.getAdvertiserName());
+                advertisement.setPriority(dto.getPriority());
+                advertisement.setStartDate(dto.getStartDate());
+                advertisement.setEndDate(dto.getEndDate());
+                if (dto.getStatus() != null) advertisement.setStatus(dto.getStatus());
+                advertisement = advertisementRepository.save(advertisement);
+                return Response.response(advertisement, "Advertisement created successfully", ResponseType.SUCCESS);
+            } else {
+                return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+            }
+        } else {
+            return Response.response(null, "User is not exist", ResponseType.SUCCESS);
         }
-        Advertisement advertisement = new Advertisement();
-        advertisement.setTitle(dto.getTitle());
-        advertisement.setDescription(dto.getDescription());
-        advertisement.setImageUrl(dto.getImageUrl());
-        advertisement.setTargetUrl(dto.getTargetUrl());
-        advertisement.setAdvertiserName(dto.getAdvertiserName());
-        advertisement.setPriority(dto.getPriority());
-        advertisement.setStartDate(dto.getStartDate());
-        advertisement.setEndDate(dto.getEndDate());
-        if (dto.getStatus() != null) advertisement.setStatus(dto.getStatus());
-        advertisement = advertisementRepository.save(advertisement);
-        return Response.response(advertisement, "Advertisement created successfully", ResponseType.SUCCESS);
     }
 
     @Override
-    public ResponseEntity<Response<Advertisement>> update(@RequestBody AdvertisementDto dto) {
-        if (dto.getId() == null) {
-            return Response.response(null, "Advertisement id is required", ResponseType.ERROR);
+    public ResponseEntity<Response<Advertisement>> update(Authentication authentication, @RequestBody AdvertisementDto dto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isPresent()) {
+            if (userOptional.get().getRole() == Role.ADMIN) {
+                if (dto.getId() == null) {
+                    return Response.response(null, "Advertisement id is required", ResponseType.ERROR);
+                }
+                Optional<Advertisement> optional = advertisementRepository.findById(dto.getId());
+                if (optional.isEmpty()) {
+                    return Response.response(null, "No advertisement found with id: " + dto.getId(), ResponseType.NOT_FOUND);
+                }
+                Advertisement advertisement = optional.get();
+                if (dto.getTitle() != null) advertisement.setTitle(dto.getTitle());
+                if (dto.getDescription() != null) advertisement.setDescription(dto.getDescription());
+                if (dto.getImageUrl() != null) advertisement.setImageUrl(dto.getImageUrl());
+                if (dto.getTargetUrl() != null) advertisement.setTargetUrl(dto.getTargetUrl());
+                if (dto.getAdvertiserName() != null) advertisement.setAdvertiserName(dto.getAdvertiserName());
+                if (dto.getStatus() != null) advertisement.setStatus(dto.getStatus());
+                if (dto.getPriority() != null) advertisement.setPriority(dto.getPriority());
+                if (dto.getStartDate() != null) advertisement.setStartDate(dto.getStartDate());
+                if (dto.getEndDate() != null) advertisement.setEndDate(dto.getEndDate());
+                advertisement = advertisementRepository.save(advertisement);
+                return Response.response(advertisement, "Advertisement updated successfully", ResponseType.SUCCESS);
+            } else {
+                return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+            }
+        } else {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
         }
-        Optional<Advertisement> optional = advertisementRepository.findById(dto.getId());
-        if (optional.isEmpty()) {
-            return Response.response(null, "No advertisement found with id: " + dto.getId(), ResponseType.NOT_FOUND);
-        }
-        Advertisement advertisement = optional.get();
-        if (dto.getTitle() != null) advertisement.setTitle(dto.getTitle());
-        if (dto.getDescription() != null) advertisement.setDescription(dto.getDescription());
-        if (dto.getImageUrl() != null) advertisement.setImageUrl(dto.getImageUrl());
-        if (dto.getTargetUrl() != null) advertisement.setTargetUrl(dto.getTargetUrl());
-        if (dto.getAdvertiserName() != null) advertisement.setAdvertiserName(dto.getAdvertiserName());
-        if (dto.getStatus() != null) advertisement.setStatus(dto.getStatus());
-        if (dto.getPriority() != null) advertisement.setPriority(dto.getPriority());
-        if (dto.getStartDate() != null) advertisement.setStartDate(dto.getStartDate());
-        if (dto.getEndDate() != null) advertisement.setEndDate(dto.getEndDate());
-        advertisement = advertisementRepository.save(advertisement);
-        return Response.response(advertisement, "Advertisement updated successfully", ResponseType.SUCCESS);
     }
 
     @Override
-    public ResponseEntity<Response<Advertisement>> delete(Long id) {
+    public ResponseEntity<Response<Advertisement>> delete(Authentication authentication, Long id) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         if (!advertisementRepository.existsById(id)) {
             return Response.response(null, "No advertisement found with id: " + id, ResponseType.NOT_FOUND);
         }

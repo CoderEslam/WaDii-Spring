@@ -1,6 +1,9 @@
 package com.doubleclick.wadii.controller;
 
+import com.doubleclick.wadii.auth.model.User;
+import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.ServicesDto;
+import com.doubleclick.wadii.entities.Role;
 import com.doubleclick.wadii.entities.Service;
 import com.doubleclick.wadii.repository.ServiceRepository;
 import com.doubleclick.wadii.ts.Controller;
@@ -20,6 +23,7 @@ import java.util.Optional;
 public class ServiceController extends Controller<Service, ServicesDto, Long> {
 
     private final ServiceRepository serviceRepository;
+    private final UserRepository userRepository;
 
 
     @Override
@@ -31,6 +35,13 @@ public class ServiceController extends Controller<Service, ServicesDto, Long> {
 
     @Override
     public ResponseEntity<Response<Service>> insert(Authentication authentication, @RequestBody ServicesDto servicesDto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         if (servicesDto.isNotEmpty()) {
             Optional<Service> serviceOptional = serviceRepository.findByName(servicesDto.getName());
             if (serviceOptional.isEmpty()) {
@@ -47,7 +58,14 @@ public class ServiceController extends Controller<Service, ServicesDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Service>> update(ServicesDto servicesDto) {
+    public ResponseEntity<Response<Service>> update(Authentication authentication, ServicesDto servicesDto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         if (servicesDto.isNotEmpty()) {
             Optional<Service> serviceOptional = serviceRepository.findById(servicesDto.getId());
             if (serviceOptional.isPresent()) {
@@ -65,7 +83,14 @@ public class ServiceController extends Controller<Service, ServicesDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Service>> delete(Long id) {
+    public ResponseEntity<Response<Service>> delete(Authentication authentication, Long id) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         Optional<Service> serviceOptional = serviceRepository.findById(id);
         if (serviceOptional.isPresent()) {
             serviceRepository.deleteById(id);

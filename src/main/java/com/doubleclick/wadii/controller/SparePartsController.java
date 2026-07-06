@@ -41,7 +41,7 @@ public class SparePartsController extends Controller<SpareParts, SparePartsDto, 
     }
 
     @Override
-    public ResponseEntity<Response<SpareParts>> update(SparePartsDto sparePartsDto) {
+    public ResponseEntity<Response<SpareParts>> update(Authentication authentication, SparePartsDto sparePartsDto) {
         Optional<SpareParts> sparePartsOptional = sparePartsRepository.findById(sparePartsDto.getId());
         if (sparePartsOptional.isPresent()) {
             if (sparePartsDto.isNotEmpty()) {
@@ -52,13 +52,13 @@ public class SparePartsController extends Controller<SpareParts, SparePartsDto, 
             } else {
                 return Response.response(null, "name is empty", ResponseType.SUCCESS);
             }
-        }else {
+        } else {
             return Response.response(null, "there is no spare part with this id : " + sparePartsDto.getId(), ResponseType.NOT_FOUND);
         }
     }
 
     @Override
-    public ResponseEntity<Response<SpareParts>> delete(Long id) {
+    public ResponseEntity<Response<SpareParts>> delete(Authentication authentication, Long id) {
         Optional<SpareParts> spareParts = sparePartsRepository.findById(id);
         if (spareParts.isPresent()) {
             sparePartsRepository.deleteById(id);

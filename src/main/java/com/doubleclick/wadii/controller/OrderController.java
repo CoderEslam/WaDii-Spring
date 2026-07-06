@@ -76,15 +76,75 @@ public class OrderController extends Controller<Order, OrderDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Order>> update(OrderDto orderDto) {
-        return null;
+    public ResponseEntity<Response<Order>> update(Authentication authentication, OrderDto orderDto) {
+        if (orderDto.getId() == null) {
+            return Response.response(null, "order id is required", ResponseType.ERROR);
+        }
+        Optional<Order> orderOptional = orderRepository.findById(orderDto.getId());
+        if (orderOptional.isEmpty()) {
+            return Response.response(null, "there is no order with this id : " + orderDto.getId(), ResponseType.NOT_FOUND);
+        }
+        Order order = orderOptional.get();
+        if (orderDto.getCarModelYear() != null) order.setCarModelYear(orderDto.getCarModelYear());
+        if (orderDto.getComment() != null) order.setComment(orderDto.getComment());
+        if (orderDto.getDate() != null) order.setDate(orderDto.getDate());
+        if (orderDto.getLatitude() != null) order.setLatitude(orderDto.getLatitude());
+        if (orderDto.getLongitude() != null) order.setLongitude(orderDto.getLongitude());
+
+        if (orderDto.getServicesIds() != null && !orderDto.getServicesIds().isEmpty()) {
+            if (order.getServices() != null) {
+                for (Service service : order.getServices()) {
+                    if (service.getOrders() != null) {
+                        service.getOrders().remove(order);
+                        serviceRepository.save(service);
+                    }
+                }
+            }
+            List<Service> newServices = serviceRepository.findAllById(orderDto.getServicesIds());
+            order.setServices(newServices);
+            for (Service service : newServices) {
+                if (service.getOrders() != null) {
+                    service.getOrders().add(order);
+                } else {
+                    List<Order> orders = new ArrayList<>();
+                    orders.add(order);
+                    service.setOrders(orders);
+                }
+                serviceRepository.save(service);
+            }
+        }
+
+        order = orderRepository.save(order);
+
+        if (orderDto.getSpareParts() != null && !orderDto.getSpareParts().isEmpty()) {
+            if (order.getSpareParts() != null && !order.getSpareParts().isEmpty()) {
+                sparePartsRepository.deleteAll(order.getSpareParts());
+            }
+            List<SpareParts> newSpareParts = new ArrayList<>();
+            for (SparePartsDto sparePartsDto : orderDto.getSpareParts()) {
+                SpareParts spareParts = new SpareParts();
+                spareParts.setSparePartName(sparePartsDto.getSparePartName());
+                spareParts.setOrder(order);
+                newSpareParts.add(sparePartsRepository.save(spareParts));
+            }
+            order.setSpareParts(newSpareParts);
+        }
+
+        return Response.response(order, "Order updated successfully", ResponseType.SUCCESS);
     }
 
 
     @Override
-    public ResponseEntity<Response<Order>> delete(Long id) {
+    public ResponseEntity<Response<Order>> delete(Authentication authentication, Long id) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
+        }
         Optional<Order> orderOptional = orderRepository.findById(id);
         if (orderOptional.isPresent()) {
+            if (!orderOptional.get().getUser().getId().equals(userOptional.get().getId())) {
+                return Response.response(null, "You can only delete orders you created", ResponseType.SUCCESS);
+            }
             orderRepository.deleteById(id);
             return Response.response(null, "order deleted successfully", ResponseType.SUCCESS);
         } else {

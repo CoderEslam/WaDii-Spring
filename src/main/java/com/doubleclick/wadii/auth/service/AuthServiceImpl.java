@@ -51,10 +51,13 @@ public class AuthServiceImpl implements AuthService {
         user.setImage("download.jpeg");
         user.setBackgroundImage("download.jpeg");
         user.setFcmToken(authRequest.getFcmToken());
-        if (authRequest.getUserType() == 0) {
-            user.setRole(Role.USER);
-        } else {
-            user.setRole(Role.PROVIDER);
+        switch (authRequest.getUserType()) {
+            case 0:
+                user.setRole(Role.USER);
+            case 1:
+                user.setRole(Role.PROVIDER);
+            case 2:
+                user.setRole(Role.ADMIN);
         }
         user.setPassword(passwordEncoder.encode(authRequest.getPassword()));
         user = userRepository.save(user);
@@ -74,9 +77,6 @@ public class AuthServiceImpl implements AuthService {
             provider.setName(authRequest.getProviderName());
             provider = providerRepository.save(provider);
             return Response.response(user, "provider registered successfully", ResponseType.SUCCESS);
-        }
-        if (user.getProvider() == null) {
-//            user.setProvider(new Provider(0L));
         }
         return Response.response(user, "User registered successfully", ResponseType.SUCCESS);
     }

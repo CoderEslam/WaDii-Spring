@@ -1,7 +1,10 @@
 package com.doubleclick.wadii.controller;
 
+import com.doubleclick.wadii.auth.model.User;
+import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.BranchDto;
 import com.doubleclick.wadii.entities.Branch;
+import com.doubleclick.wadii.entities.Role;
 import com.doubleclick.wadii.repository.BranchRepository;
 import com.doubleclick.wadii.repository.ProviderRepository;
 import com.doubleclick.wadii.ts.Controller;
@@ -22,6 +25,7 @@ public class BranchController extends Controller<Branch, BranchDto, Long> {
 
     private final BranchRepository branchRepository;
     private final ProviderRepository providerRepository;
+    private final UserRepository userRepository;
 
     @Override
     public ResponseEntity<Response<Branch>> show(Long id) {
@@ -32,6 +36,13 @@ public class BranchController extends Controller<Branch, BranchDto, Long> {
 
     @Override
     public ResponseEntity<Response<Branch>> insert(Authentication authentication, @RequestBody BranchDto branchDto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.PROVIDER) {
+            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+        }
         if (branchDto.getName() == null || branchDto.getName().trim().isEmpty()) {
             return Response.response(null, "branch name is required", ResponseType.ERROR);
         }
@@ -48,7 +59,14 @@ public class BranchController extends Controller<Branch, BranchDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Branch>> update(@RequestBody BranchDto branchDto) {
+    public ResponseEntity<Response<Branch>> update(Authentication authentication, @RequestBody BranchDto branchDto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.PROVIDER) {
+            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+        }
         if (branchDto.getId() == null) {
             return Response.response(null, "branch id is required", ResponseType.ERROR);
         }
@@ -73,7 +91,14 @@ public class BranchController extends Controller<Branch, BranchDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Branch>> delete(Long id) {
+    public ResponseEntity<Response<Branch>> delete(Authentication authentication, Long id) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.PROVIDER) {
+            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+        }
         Optional<Branch> branchOptional = branchRepository.findById(id);
         if (branchOptional.isPresent()) {
             branchRepository.deleteById(id);

@@ -2,11 +2,13 @@ package com.doubleclick.wadii.websocket;
 
 import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.auth.repository.UserRepository;
+import com.doubleclick.wadii.dto.CallSignal;
 import com.doubleclick.wadii.dto.ChatMessagePayload;
 import com.doubleclick.wadii.entities.ChatContact;
 import com.doubleclick.wadii.entities.Message;
 import com.doubleclick.wadii.repository.ChatContactRepository;
 import com.doubleclick.wadii.repository.MessageRepository;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -20,6 +22,7 @@ import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
@@ -32,8 +35,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final PresenceRegistry presenceRegistry;
     private final ObjectMapper objectMapper;
     private static final String TAG = "ChatWebSocketHandler";
-    // userId → open WebSocketSession (one session per user; last one wins on reconnect)
-    private final ConcurrentHashMap<Long, WebSocketSession> sessions = new ConcurrentHashMap<>();
+    private static final Set<String> CALL_EVENTS = Set.of("CALL_INVITE", "CALL_ACCEPT", "CALL_REJECT", "CALL_END");
+    // userId → open WebSocketSessions (a user may have multiple concurrent sockets, e.g. chat + calls)
+    private final ConcurrentHashMap<Long, Set<WebSocketSession>> sessions = new ConcurrentHashMap<>();
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -44,7 +48,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             session.close(CloseStatus.POLICY_VIOLATION);
             return;
         }
-        sessions.put(userId, session);
+        sessions.computeIfAbsent(userId, k -> ConcurrentHashMap.newKeySet()).add(session);
         presenceRegistry.connect(userId, session.getId());
         broadcastPresence(userId, true);
     }
@@ -53,7 +57,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         Long userId = userId(session);
         if (userId == null) return;
-        sessions.remove(userId, session);
+        removeSession(userId, session);
         presenceRegistry.disconnect(session.getId());
         if (!presenceRegistry.isOnline(userId)) {
             broadcastPresence(userId, false);
@@ -64,7 +68,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     public void handleTransportError(WebSocketSession session, Throwable ex) {
         Long userId = userId(session);
         if (userId != null) {
-            sessions.remove(userId, session);
+            removeSession(userId, session);
             presenceRegistry.disconnect(session.getId());
         }
     }
@@ -75,7 +79,13 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     protected void handleTextMessage(WebSocketSession session, TextMessage raw) throws Exception {
         Long fromUserId = userId(session);
         if (fromUserId == null) return;
-        ChatMessagePayload payload = objectMapper.readValue(raw.getPayload(), ChatMessagePayload.class);
+        JsonNode root = objectMapper.readTree(raw.getPayload());
+        String event = root.hasNonNull("event") ? root.get("event").asText() : null;
+        if (event != null && CALL_EVENTS.contains(event)) {
+            handleCallSignal(fromUserId, event, root.get("data"));
+            return;
+        }
+        ChatMessagePayload payload = objectMapper.treeToValue(root, ChatMessagePayload.class);
         Optional<User> fromOpt = userRepository.findById(fromUserId);
         Optional<User> toOpt = userRepository.findById(payload.getToUserId());
         if (fromOpt.isEmpty() || toOpt.isEmpty()) return;
@@ -102,18 +112,52 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         send(fromUserId, json);
     }
 
+    private void handleCallSignal(Long fromUserId, String event, JsonNode dataNode) throws IOException {
+        if (dataNode == null || dataNode.isNull()) return;
+        CallSignal signal = objectMapper.treeToValue(dataNode, CallSignal.class);
+        // never trust the client-supplied sender id — it must match the authenticated socket
+        signal.setFromUserId(fromUserId);
+        if (signal.getToUserId() == null) return;
+
+        sendCallSignal(event, signal);
+    }
+
+    /**
+     * Pushes a call-signaling event (CALL_INVITE/CALL_ACCEPT/CALL_REJECT/CALL_END) to the target
+     * user's open socket(s). Also usable from REST controllers, e.g. as a fallback path for
+     * clients that aren't holding the chat socket open. Returns whether the recipient had an
+     * open session to deliver to.
+     */
+    public boolean sendCallSignal(String event, CallSignal signal) throws IOException {
+        String json = objectMapper.writeValueAsString(Map.of("event", event, "data", signal));
+        return send(signal.getToUserId(), json);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private void send(Long userId, String json) {
-        WebSocketSession s = sessions.get(userId);
-        if (s != null && s.isOpen()) {
-            try {
-                System.out.println("");
-                s.sendMessage(new TextMessage(json));
-            } catch (IOException ignored) {
-                System.out.println(ignored.getMessage());
+    private void removeSession(Long userId, WebSocketSession session) {
+        Set<WebSocketSession> userSessions = sessions.get(userId);
+        if (userSessions == null) return;
+        userSessions.remove(session);
+        sessions.computeIfPresent(userId, (k, v) -> v.isEmpty() ? null : v);
+    }
+
+    private boolean send(Long userId, String json) {
+        Set<WebSocketSession> userSessions = sessions.get(userId);
+        if (userSessions == null) return false;
+        TextMessage msg = new TextMessage(json);
+        boolean delivered = false;
+        for (WebSocketSession s : userSessions) {
+            if (s.isOpen()) {
+                try {
+                    s.sendMessage(msg);
+                    delivered = true;
+                } catch (IOException ignored) {
+                    System.out.println(ignored.getMessage());
+                }
             }
         }
+        return delivered;
     }
 
     private void broadcastPresence(Long userId, boolean online) {
@@ -125,12 +169,12 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         TextMessage msg = new TextMessage(json);
-        sessions.values().forEach(s -> {
+        sessions.values().forEach(userSessions -> userSessions.forEach(s -> {
             if (s.isOpen()) try {
                 s.sendMessage(msg);
             } catch (IOException ignored) {
             }
-        });
+        }));
     }
 
     private Long userId(WebSocketSession session) {

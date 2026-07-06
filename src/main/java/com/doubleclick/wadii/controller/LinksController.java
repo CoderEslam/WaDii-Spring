@@ -1,8 +1,11 @@
 package com.doubleclick.wadii.controller;
 
+import com.doubleclick.wadii.auth.model.User;
+import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.LinksDto;
 import com.doubleclick.wadii.entities.Links;
 import com.doubleclick.wadii.entities.Provider;
+import com.doubleclick.wadii.entities.Role;
 import com.doubleclick.wadii.repository.LinksRepository;
 import com.doubleclick.wadii.repository.ProviderRepository;
 import com.doubleclick.wadii.ts.Controller;
@@ -23,6 +26,7 @@ public class LinksController extends Controller<Links, LinksDto, Long> {
 
     private final LinksRepository linksRepository;
     private final ProviderRepository providerRepository;
+    private final UserRepository userRepository;
 
     @Override
     public ResponseEntity<Response<Links>> show(Long id) {
@@ -33,6 +37,13 @@ public class LinksController extends Controller<Links, LinksDto, Long> {
 
     @Override
     public ResponseEntity<Response<Links>> insert(Authentication authentication, @RequestBody LinksDto linksDto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.PROVIDER) {
+            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+        }
         if (linksDto.isNotEmpty()) {
             Optional<Provider> providerOptional = providerRepository.findById(linksDto.getProviderId());
             if (providerOptional.isPresent()) {
@@ -55,7 +66,14 @@ public class LinksController extends Controller<Links, LinksDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Links>> update(LinksDto linksDto) {
+    public ResponseEntity<Response<Links>> update(Authentication authentication, LinksDto linksDto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.PROVIDER) {
+            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+        }
         if (linksDto.isNotEmpty()) {
             Optional<Provider> providerOptional = providerRepository.findById(linksDto.getProviderId());
             if (providerOptional.isPresent()) {
@@ -79,7 +97,14 @@ public class LinksController extends Controller<Links, LinksDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Links>> delete(Long id) {
+    public ResponseEntity<Response<Links>> delete(Authentication authentication, Long id) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.PROVIDER) {
+            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+        }
         Optional<Links> cityOptional = linksRepository.findById(id);
         if (cityOptional.isPresent()) {
             linksRepository.deleteById(id);

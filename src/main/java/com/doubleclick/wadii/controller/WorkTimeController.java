@@ -1,7 +1,10 @@
 package com.doubleclick.wadii.controller;
 
+import com.doubleclick.wadii.auth.model.User;
+import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.WorkTimeDto;
 import com.doubleclick.wadii.entities.Branch;
+import com.doubleclick.wadii.entities.Role;
 import com.doubleclick.wadii.entities.WorkTime;
 import com.doubleclick.wadii.repository.BranchRepository;
 import com.doubleclick.wadii.repository.WorkTimeRepository;
@@ -23,6 +26,7 @@ public class WorkTimeController extends Controller<WorkTime, WorkTimeDto, Long> 
 
     private final WorkTimeRepository workTimeRepository;
     private final BranchRepository branchRepository;
+    private final UserRepository userRepository;
 
     @Override
     public ResponseEntity<Response<WorkTime>> show(Long id) {
@@ -33,6 +37,13 @@ public class WorkTimeController extends Controller<WorkTime, WorkTimeDto, Long> 
 
     @Override
     public ResponseEntity<Response<WorkTime>> insert(Authentication authentication, @RequestBody WorkTimeDto workTimeDto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.PROVIDER) {
+            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+        }
         if (workTimeDto.isNotEmpty()) {
             Optional<Branch> branchOptional = branchRepository.findById(workTimeDto.getBranchId());
             if (branchOptional.isPresent()) {
@@ -52,7 +63,14 @@ public class WorkTimeController extends Controller<WorkTime, WorkTimeDto, Long> 
     }
 
     @Override
-    public ResponseEntity<Response<WorkTime>> update(WorkTimeDto workTimeDto) {
+    public ResponseEntity<Response<WorkTime>> update(Authentication authentication, WorkTimeDto workTimeDto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.PROVIDER) {
+            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+        }
         if (workTimeDto.isNotEmpty()) {
             Optional<Branch> branchOptional = branchRepository.findById(workTimeDto.getBranchId());
             if (branchOptional.isPresent()) {
@@ -78,7 +96,14 @@ public class WorkTimeController extends Controller<WorkTime, WorkTimeDto, Long> 
     }
 
     @Override
-    public ResponseEntity<Response<WorkTime>> delete(Long id) {
+    public ResponseEntity<Response<WorkTime>> delete(Authentication authentication, Long id) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.PROVIDER) {
+            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+        }
         Optional<WorkTime> workTimeOptional = workTimeRepository.findById(id);
         if (workTimeOptional.isPresent()) {
             workTimeRepository.deleteById(id);

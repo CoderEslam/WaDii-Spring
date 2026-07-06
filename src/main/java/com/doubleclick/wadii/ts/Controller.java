@@ -16,10 +16,10 @@ public abstract class Controller<Entity, DTO, ID> {
     public abstract ResponseEntity<Response<Entity>> insert(Authentication authentication, @RequestBody DTO dto);
 
     @PostMapping("/update")
-    public abstract ResponseEntity<Response<Entity>> update(@RequestBody DTO dto);
+    public abstract ResponseEntity<Response<Entity>> update(Authentication authentication, @RequestBody DTO dto);
 
     @DeleteMapping("/delete/{id}")
-    public abstract ResponseEntity<Response<Entity>> delete(@PathVariable ID id);
+    public abstract ResponseEntity<Response<Entity>> delete(Authentication authentication, @PathVariable ID id);
 
     @GetMapping("/show-all")
     public abstract ResponseEntity<Response<List<Entity>>> readAll();

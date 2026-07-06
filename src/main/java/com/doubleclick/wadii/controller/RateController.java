@@ -42,16 +42,15 @@ public class RateController extends Controller<Rate, RateDto, Long> {
             if (optionalUser.isPresent()) {
                 Optional<Provider> providerOptional = providerRepository.findById(rateDto.getProviderId());
                 if (providerOptional.isPresent()) {
-                    Rate rate = new Rate();
+                    Provider provider = providerOptional.get();
+                    Rate rate = rateRepository.findByUserIdAndProviderId(rateDto.getUserId(), rateDto.getProviderId())
+                            .orElseGet(Rate::new);
                     rate.setRate(rateDto.getRate());
                     rate.setComment(rateDto.getComment());
-                    Provider provider = providerOptional.get();
                     rate.setProvider(provider);
                     rate.setUser(optionalUser.get());
                     rate = rateRepository.save(rate);
-                    System.out.println("DEBUG RATE = " + rate);
                     Double avg = rateRepository.findAverageRateByProviderId(provider.getId());
-                    System.out.println("DEBUG RATE = " + avg);
                     provider.setRate(avg != null ? avg : 0.0);
                     providerRepository.save(provider);
                     return Response.response(rate, "Rate saved successfully", ResponseType.SUCCESS);
@@ -69,28 +68,29 @@ public class RateController extends Controller<Rate, RateDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Rate>> update(RateDto rateDto) {
+    public ResponseEntity<Response<Rate>> update(Authentication authentication, RateDto rateDto) {
         if (rateDto.isNotEmpty()) {
             Optional<Rate> rateOptional = rateRepository.findById(rateDto.getId());
             if (rateOptional.isPresent()) {
-                Optional<User> optionalUser = userRepository.findById(rateDto.getUserId());
-                if (optionalUser.isPresent()) {
-                    Optional<Provider> providerOptional = providerRepository.findById(rateDto.getProviderId());
-                    if (providerOptional.isPresent()) {
-                        Rate rate = rateOptional.get();
-                        rate.setRate(rate.getRate());
-                        rate.setComment(rate.getComment());
-                        rate.setProvider(rate.getProvider());
-                        rate.setUser(rate.getUser());
-                        rate = rateRepository.save(rate);
-                        return Response.response(rate, "Rate saved successfully", ResponseType.SUCCESS);
-                    } else {
-                        //provider not exist
-                        return Response.response(null, "Provider with this id = " + rateDto.getProviderId() + " not exist", ResponseType.SUCCESS);
-                    }
+                Rate rate = rateOptional.get();
+                Optional<User> currentUserOptional = userRepository.findByEmail(authentication.getName());
+                if (currentUserOptional.isEmpty()) {
+                    return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
+                }
+                if (!rate.getUser().getId().equals(currentUserOptional.get().getId())) {
+                    return Response.response(null, "You can only update rates you created", ResponseType.SUCCESS);
+                }
+                Optional<Provider> providerOptional = providerRepository.findById(rateDto.getProviderId());
+                if (providerOptional.isPresent()) {
+                    rate.setRate(rate.getRate());
+                    rate.setComment(rate.getComment());
+                    rate.setProvider(rate.getProvider());
+                    rate.setUser(rate.getUser());
+                    rate = rateRepository.save(rate);
+                    return Response.response(rate, "Rate saved successfully", ResponseType.SUCCESS);
                 } else {
-                    //user not exist
-                    return Response.response(null, "User with this id = " + rateDto.getUserId() + " not exist", ResponseType.SUCCESS);
+                    //provider not exist
+                    return Response.response(null, "Provider with this id = " + rateDto.getProviderId() + " not exist", ResponseType.SUCCESS);
                 }
             } else {
                 return Response.response(null, "Rate with this id = " + rateDto.getId() + " not exist", ResponseType.SUCCESS);
@@ -101,9 +101,16 @@ public class RateController extends Controller<Rate, RateDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Rate>> delete(Long id) {
-        Optional<Rate> carType = rateRepository.findById(id);
-        if (carType.isPresent()) {
+    public ResponseEntity<Response<Rate>> delete(Authentication authentication, Long id) {
+        Optional<Rate> rateOptional = rateRepository.findById(id);
+        if (rateOptional.isPresent()) {
+            Optional<User> currentUserOptional = userRepository.findByEmail(authentication.getName());
+            if (currentUserOptional.isEmpty()) {
+                return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
+            }
+            if (!rateOptional.get().getUser().getId().equals(currentUserOptional.get().getId())) {
+                return Response.response(null, "You can only delete rates you created", ResponseType.SUCCESS);
+            }
             rateRepository.deleteById(id);
             return Response.response(null, "car deleted successfully", ResponseType.SUCCESS);
         } else {

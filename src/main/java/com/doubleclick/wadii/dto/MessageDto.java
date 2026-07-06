@@ -13,7 +13,6 @@ public class MessageDto {
     private Long id;
     private String text;
     private String type;
-//    private Long fromUserId;
     private Long toUserId;
 
     public boolean isNotEmpty() {

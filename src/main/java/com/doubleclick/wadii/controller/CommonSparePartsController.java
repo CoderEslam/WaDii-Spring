@@ -1,7 +1,10 @@
 package com.doubleclick.wadii.controller;
 
+import com.doubleclick.wadii.auth.model.User;
+import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.CommonSparePartsDto;
 import com.doubleclick.wadii.entities.CommonSpareParts;
+import com.doubleclick.wadii.entities.Role;
 import com.doubleclick.wadii.repository.CommonSparePartsRepository;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
@@ -20,6 +23,7 @@ import java.util.Optional;
 public class CommonSparePartsController extends Controller<CommonSpareParts, CommonSparePartsDto, Long> {
 
     private final CommonSparePartsRepository commonSparePartsRepository;
+    private final UserRepository userRepository;
 
     @Override
     public ResponseEntity<Response<CommonSpareParts>> show(Long id) {
@@ -30,6 +34,13 @@ public class CommonSparePartsController extends Controller<CommonSpareParts, Com
 
     @Override
     public ResponseEntity<Response<CommonSpareParts>> insert(Authentication authentication, @RequestBody CommonSparePartsDto dto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         if (dto.isNotEmpty()) {
             Optional<CommonSpareParts> existing = commonSparePartsRepository.findByName(dto.getName());
             if (existing.isEmpty()) {
@@ -46,7 +57,14 @@ public class CommonSparePartsController extends Controller<CommonSpareParts, Com
     }
 
     @Override
-    public ResponseEntity<Response<CommonSpareParts>> update(@RequestBody CommonSparePartsDto dto) {
+    public ResponseEntity<Response<CommonSpareParts>> update(Authentication authentication,@RequestBody CommonSparePartsDto dto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         if (dto.isNotEmpty()) {
             Optional<CommonSpareParts> partOptional = commonSparePartsRepository.findById(dto.getId());
             if (partOptional.isPresent()) {
@@ -63,7 +81,14 @@ public class CommonSparePartsController extends Controller<CommonSpareParts, Com
     }
 
     @Override
-    public ResponseEntity<Response<CommonSpareParts>> delete(Long id) {
+    public ResponseEntity<Response<CommonSpareParts>> delete(Authentication authentication,Long id) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         Optional<CommonSpareParts> partOptional = commonSparePartsRepository.findById(id);
         if (partOptional.isPresent()) {
             commonSparePartsRepository.deleteById(id);

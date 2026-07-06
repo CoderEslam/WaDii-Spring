@@ -1,7 +1,10 @@
 package com.doubleclick.wadii.controller;
 
+import com.doubleclick.wadii.auth.model.User;
+import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.CarTypesDto;
 import com.doubleclick.wadii.entities.CarType;
+import com.doubleclick.wadii.entities.Role;
 import com.doubleclick.wadii.repository.CarTypeRepository;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
@@ -20,6 +23,7 @@ import java.util.Optional;
 public class CarTypesController extends Controller<CarType, CarTypesDto, Long> {
 
     private final CarTypeRepository carTypeRepository;
+    private final UserRepository userRepository;
 
     @Override
     public ResponseEntity<Response<CarType>> show(Long id) {
@@ -30,6 +34,13 @@ public class CarTypesController extends Controller<CarType, CarTypesDto, Long> {
 
     @Override
     public ResponseEntity<Response<CarType>> insert(Authentication authentication, @RequestBody CarTypesDto carTypesDto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         if (carTypesDto.isNotEmpty()) {
             Optional<CarType> carType = carTypeRepository.findByName(carTypesDto.getName());
             if (carType.isEmpty()) {
@@ -46,7 +57,14 @@ public class CarTypesController extends Controller<CarType, CarTypesDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<CarType>> update(CarTypesDto carTypesDto) {
+    public ResponseEntity<Response<CarType>> update(Authentication authentication,CarTypesDto carTypesDto) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         if (carTypesDto.isNotEmpty()) {
             Optional<CarType> carType = carTypeRepository.findById(carTypesDto.getId());
             if (carType.isPresent()) {
@@ -64,7 +82,14 @@ public class CarTypesController extends Controller<CarType, CarTypesDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<CarType>> delete(Long id) {
+    public ResponseEntity<Response<CarType>> delete(Authentication authentication,Long id) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
         Optional<CarType> carType = carTypeRepository.findById(id);
         if (carType.isPresent()) {
             carTypeRepository.deleteById(id);

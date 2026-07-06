@@ -55,12 +55,12 @@ public class SavedOfferController extends Controller<SavedOffer, SavedOfferDto, 
     }
 
     @Override
-    public ResponseEntity<Response<SavedOffer>> update(SavedOfferDto dto) {
+    public ResponseEntity<Response<SavedOffer>> update(Authentication authentication, SavedOfferDto dto) {
         return Response.response(null, "Not supported", ResponseType.ERROR);
     }
 
     @Override
-    public ResponseEntity<Response<SavedOffer>> delete(Long id) {
+    public ResponseEntity<Response<SavedOffer>> delete(Authentication authentication, Long id) {
         if (!savedOfferRepository.existsById(id)) {
             return Response.response(null, "No saved offer found with id: " + id, ResponseType.NOT_FOUND);
         }
