@@ -4,11 +4,14 @@ import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.ProviderRequestDto;
 import com.doubleclick.wadii.entities.*;
+import com.doubleclick.wadii.notification.Notification;
+import com.doubleclick.wadii.notification.NotificationService;
 import com.doubleclick.wadii.repository.ProviderRepository;
 import com.doubleclick.wadii.repository.ProviderRequestRepository;
 import com.doubleclick.wadii.repository.ServiceRepository;
 import com.doubleclick.wadii.utils.Response;
 import com.doubleclick.wadii.utils.ResponseType;
+import com.google.gson.JsonObject;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -33,6 +36,7 @@ public class ProviderRequestController {
     private final UserRepository userRepository;
     private final ProviderRepository providerRepository;
     private final ServiceRepository serviceRepository;
+    private final NotificationService notificationService;
 
     @PostMapping(value = "/request", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Response<ProviderRequest>> requestToBeProvider(@ModelAttribute ProviderRequestDto dto) {
@@ -151,11 +155,41 @@ public class ProviderRequestController {
 
         providerRequestRepository.deleteById(id);
 
+        sendProviderAcceptedNotification(user);
+
         return Response.response(provider, "Request accepted, provider created successfully", ResponseType.SUCCESS);
     }
 
+    private void sendProviderAcceptedNotification(User user) {
+        if (user.getFcmToken() == null || user.getFcmToken().isBlank()) return;
+        try {
+            JsonObject body = new JsonObject();
+            body.addProperty("body", "Congratulations! Your provider request has been accepted.");
+            Notification notification = new Notification("Provider Request Accepted", body, "PROVIDER_ACCEPTED", "SENT", user.getId());
+            notificationService.sendNotification(notification);
+        } catch (Exception e) {
+            System.out.println("ProviderRequestController failed to send provider-accepted notification: " + e.getMessage());
+        }
+    }
+
+    private void sendProviderRejectedNotification(User user, String reason) {
+        if (user.getFcmToken() == null || user.getFcmToken().isBlank()) return;
+        try {
+            String message = "Your provider request has been rejected.";
+            if (reason != null && !reason.isBlank()) {
+                message += " Reason: " + reason;
+            }
+            JsonObject body = new JsonObject();
+            body.addProperty("body", message);
+            Notification notification = new Notification("Provider Request Rejected", body, "PROVIDER_REJECTED", "SENT", user.getId());
+            notificationService.sendNotification(notification);
+        } catch (Exception e) {
+            System.out.println("ProviderRequestController failed to send provider-rejected notification: " + e.getMessage());
+        }
+    }
+
     @PostMapping("/reject/{id}")
-    public ResponseEntity<Response<ProviderRequest>> rejectRequest(Authentication authentication, @PathVariable Long id) {
+    public ResponseEntity<Response<ProviderRequest>> rejectRequest(Authentication authentication, @PathVariable Long id, @RequestParam(required = false) String reason) {
         Optional<User> adminOptional = userRepository.findByEmail(authentication.getName());
         if (adminOptional.isEmpty()) {
             return Response.response(null, "User not exist", ResponseType.SUCCESS);
@@ -168,7 +202,10 @@ public class ProviderRequestController {
             return Response.response(null, "No request found with id: " + id, ResponseType.NOT_FOUND);
         }
         ProviderRequest providerRequest = requestOptional.get();
+        User user = providerRequest.getUser();
         providerRequestRepository.deleteById(id);
+
+        sendProviderRejectedNotification(user, reason);
 
         return Response.response(providerRequest, "Request rejected successfully", ResponseType.SUCCESS);
     }

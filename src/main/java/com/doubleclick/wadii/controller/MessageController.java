@@ -5,11 +5,14 @@ import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.MessageDto;
 import com.doubleclick.wadii.entities.ChatContact;
 import com.doubleclick.wadii.entities.Message;
+import com.doubleclick.wadii.notification.Notification;
+import com.doubleclick.wadii.notification.NotificationService;
 import com.doubleclick.wadii.repository.ChatContactRepository;
 import com.doubleclick.wadii.repository.MessageRepository;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
 import com.doubleclick.wadii.utils.ResponseType;
+import com.google.gson.JsonObject;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -30,6 +33,7 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
     private final UserRepository userRepository;
     private final ChatContactRepository chatContactRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final NotificationService notificationService;
     private static final String TAG = "MessageController";
 
     @Override
@@ -60,6 +64,7 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
             upsertChatContact(toUserOptional.get(), fromUserOptional.get(), messageDto.getText(), messageDto.getType());
             messagingTemplate.convertAndSendToUser(String.valueOf(toUserOptional.get().getId()), "/queue/messages", message);
             messagingTemplate.convertAndSendToUser(String.valueOf(fromUserOptional.get().getId()), "/queue/messages", message);
+            sendMessageNotification(fromUserOptional.get(), toUserOptional.get(), message);
             return Response.response(message, "Message sent successfully", ResponseType.SUCCESS);
         } else {
             return Response.response(null, "text, type, or toUserId is empty", ResponseType.ERROR);
@@ -94,20 +99,20 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Message>> delete(Authentication authentication, Long id) {
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
+            return Response.response(false, "authenticated user not found", ResponseType.NOT_FOUND);
         }
         Optional<Message> messageOptional = messageRepository.findById(id);
         if (messageOptional.isPresent()) {
             if (!messageOptional.get().getFromUser().getId().equals(userOptional.get().getId())) {
-                return Response.response(null, "You can only delete messages you created", ResponseType.SUCCESS);
+                return Response.response(false, "You can only delete messages you created", ResponseType.SUCCESS);
             }
             messageRepository.deleteById(id);
-            return Response.response(null, "message deleted successfully", ResponseType.SUCCESS);
+            return Response.response(true, "message deleted successfully", ResponseType.SUCCESS);
         } else {
-            return Response.response(null, "there is no message with this id : " + id, ResponseType.NOT_FOUND);
+            return Response.response(false, "there is no message with this id : " + id, ResponseType.NOT_FOUND);
         }
     }
 
@@ -168,6 +173,21 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
         }
         List<ChatContact> contacts = chatContactRepository.findByUserIdOrderByLastMessageAtDesc(userOptional.get().getId());
         return Response.response(contacts, "Chat list", ResponseType.SUCCESS);
+    }
+
+    private void sendMessageNotification(User fromUser, User toUser, Message message) {
+        if (toUser.getFcmToken() == null || toUser.getFcmToken().isBlank()) return;
+        try {
+            String senderName = (fromUser.getFirstName() != null ? fromUser.getFirstName() : "")
+                    + (fromUser.getLastName() != null ? " " + fromUser.getLastName() : "");
+            senderName = senderName.trim().isEmpty() ? "New message" : senderName.trim();
+            JsonObject body = new JsonObject();
+            body.addProperty("body", message.getText());
+            Notification notification = new Notification(senderName, body, message.getType(), "SENT", toUser.getId());
+            notificationService.sendNotification(notification);
+        } catch (Exception e) {
+            System.out.println(TAG + " failed to send message notification: " + e.getMessage());
+        }
     }
 
     private void upsertChatContact(User user, User contact, String lastMessage, String messageType) {

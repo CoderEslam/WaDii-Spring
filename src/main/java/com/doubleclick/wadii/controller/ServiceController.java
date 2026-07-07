@@ -83,20 +83,20 @@ public class ServiceController extends Controller<Service, ServicesDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Service>> delete(Authentication authentication, Long id) {
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+            return Response.response(false, "User not exist", ResponseType.SUCCESS);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(false, "You are not admin to do this action", ResponseType.SUCCESS);
         }
         Optional<Service> serviceOptional = serviceRepository.findById(id);
         if (serviceOptional.isPresent()) {
             serviceRepository.deleteById(id);
-            return Response.response(null, "service deleted successfully", ResponseType.SUCCESS);
+            return Response.response(true, "service deleted successfully", ResponseType.SUCCESS);
         } else {
-            return Response.response(null, "there is no service with this id : " + id, ResponseType.NOT_FOUND);
+            return Response.response(false, "there is no service with this id : " + id, ResponseType.NOT_FOUND);
         }
     }
 

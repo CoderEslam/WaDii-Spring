@@ -43,10 +43,9 @@ public class NotificationService {
 
 
     public String sendNotification(Notification notification) {
-        String bearerToken = "Bearer " + getAccessToken();  // Replace with your actual token
         // Create headers and set the Authorization Bearer token
         HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(bearerToken);  // Adds "Authorization: Bearer <token>"
+        headers.setBearerAuth(getAccessToken());  // Adds "Authorization: Bearer <token>"
         headers.set("Content-Type", "application/json");
         headers.set("Accept", "application/json");
         // Create HTTP request entity
@@ -54,7 +53,7 @@ public class NotificationService {
         JsonObject jsonObjectMessage = new JsonObject();
         String deviceToken = userRepository.findById(notification.getUserId()).get().getFcmToken();
         JsonObject body = new JsonObject();
-        body.addProperty("title", "DoctorOnline");
+        body.addProperty("title", "WaDii");
         body.addProperty("body", new JsonObjectConverter().convertToDatabaseColumn(notification.getMessage()));
         jsonObjectMessage.addProperty("token", deviceToken);
         jsonObjectMessage.add("notification", body);

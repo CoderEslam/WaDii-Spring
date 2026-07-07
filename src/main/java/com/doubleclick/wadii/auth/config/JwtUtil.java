@@ -18,8 +18,8 @@ import java.util.Date;
 public class JwtUtil {
 
     private static final Logger logger = LoggerFactory.getLogger(JwtUtil.class);
-//    @Value("${security.jwt.secret-key}")
-    private String secretKey = "bXlzdXBlcnNlY3JldGtleWZvcmF1dGhlbnRpY2F0aW9u";
+    @Value("${security.jwt.secret-key}")
+    private String secretKey;
 
     @Value("${security.jwt.expiration-time}")
     private long jwtExpiration; // 24 hour

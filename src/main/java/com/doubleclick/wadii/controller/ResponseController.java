@@ -168,20 +168,20 @@ public class ResponseController extends Controller<Responses, ResponseDto, Long>
     }
 
     @Override
-    public ResponseEntity<Response<Responses>> delete(Authentication authentication, Long id) {
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
+            return Response.response(false, "authenticated user not found", ResponseType.NOT_FOUND);
         }
         Optional<Responses> responsesOptional = responseRepository.findById(id);
         if (responsesOptional.isPresent()) {
             if (!responsesOptional.get().getProvider().getUser().getId().equals(userOptional.get().getId())) {
-                return Response.response(null, "You can only delete responses you created", ResponseType.SUCCESS);
+                return Response.response(false, "You can only delete responses you created", ResponseType.SUCCESS);
             }
             responseRepository.deleteById(id);
-            return Response.response(null, "response deleted successfully", ResponseType.SUCCESS);
+            return Response.response(true, "response deleted successfully", ResponseType.SUCCESS);
         } else {
-            return Response.response(null, "there is no response with this id : " + id, ResponseType.NOT_FOUND);
+            return Response.response(false, "there is no response with this id : " + id, ResponseType.NOT_FOUND);
         }
     }
 

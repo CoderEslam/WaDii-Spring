@@ -26,7 +26,7 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<Response<User>> login(@RequestBody AuthRequest request) {
-        return authService.authenticateUser(request.getEmail(), request.getPassword());
+        return authService.authenticateUser(request.getEmail(), request.getPassword(), request.getFcmToken());
     }
 //
 //    @PostMapping("/show")

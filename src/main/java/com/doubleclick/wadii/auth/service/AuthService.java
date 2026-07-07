@@ -8,7 +8,7 @@ import org.springframework.http.ResponseEntity;
 public interface AuthService {
     ResponseEntity<Response<User>> registerUser(AuthRequest authRequest);
 
-    ResponseEntity<Response<User>> authenticateUser(String username, String password);
+    ResponseEntity<Response<User>> authenticateUser(String username, String password,String fcm);
 
     ResponseEntity<Response<User>> showById(Long id);
 }

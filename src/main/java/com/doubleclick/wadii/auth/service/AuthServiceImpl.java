@@ -51,17 +51,21 @@ public class AuthServiceImpl implements AuthService {
         user.setImage("download.jpeg");
         user.setBackgroundImage("download.jpeg");
         user.setFcmToken(authRequest.getFcmToken());
-        switch (authRequest.getUserType()) {
-            case 0:
-                user.setRole(Role.USER);
-            case 1:
-                user.setRole(Role.PROVIDER);
-            case 2:
-                user.setRole(Role.ADMIN);
+        if (authRequest.getUserType() == 0) {
+            user.setRole(Role.USER);
+        }
+        if (authRequest.getUserType() == 1) {
+            user.setRole(Role.PROVIDER);
+        }
+        if (authRequest.getUserType() == 2) {
+            user.setRole(Role.ADMIN);
         }
         user.setPassword(passwordEncoder.encode(authRequest.getPassword()));
         user = userRepository.save(user);
         user.setToken(jwtUtil.generateToken(user.getEmail(), user.getId()));
+        if (!authRequest.getFcmToken().isEmpty()) {
+            user.setFcmToken(authRequest.getFcmToken());
+        }
         user = userRepository.save(user);
         if (user.getOrders() == null) {
             user.setOrders(Collections.emptyList());
@@ -82,7 +86,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public ResponseEntity<Response<User>> authenticateUser(String email, String password) {
+    public ResponseEntity<Response<User>> authenticateUser(String email, String password, String fcm) {
         Optional<User> user = userRepository.findByEmail(email);
         if (user.isPresent()) {
             if (passwordEncoder.matches(password, user.get().getPassword())) {
@@ -98,6 +102,9 @@ public class AuthServiceImpl implements AuthService {
                     }
                 }
                 userWithNewToken.setToken(jwtUtil.generateToken(email, userWithNewToken.getId()));
+                if (!fcm.isEmpty()) {
+                    userWithNewToken.setFcmToken(fcm);
+                }
                 userWithNewToken = userRepository.save(userWithNewToken);
                 if (userWithNewToken.getOrders().isEmpty()) {
                     userWithNewToken.setOrders(Collections.emptyList());
@@ -114,6 +121,7 @@ public class AuthServiceImpl implements AuthService {
                 if (userWithNewToken.getProvider() == null) {
 //                    userWithNewToken.setProvider(new Provider(0L));
                 }
+
                 return Response.response(userWithNewToken, "success", ResponseType.SUCCESS);
             } else {
                 return Response.response(null, "Invalid password", ResponseType.ERROR);

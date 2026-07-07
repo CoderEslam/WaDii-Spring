@@ -81,19 +81,19 @@ public class CountryController extends Controller<Country, CountryDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Country>> delete(Authentication authentication, Long id) {
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+            return Response.response(false, "User not exist", ResponseType.SUCCESS);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(false, "You are not admin to do this action", ResponseType.SUCCESS);
         }
         if (countryRepository.existsById(id)) {
             countryRepository.deleteById(id);
-            return Response.response(null, "Country deleted successfully", ResponseType.SUCCESS);
+            return Response.response(true, "Country deleted successfully", ResponseType.SUCCESS);
         } else {
-            return Response.response(null, "No country with id: " + id, ResponseType.NOT_FOUND);
+            return Response.response(false, "No country with id: " + id, ResponseType.NOT_FOUND);
         }
     }
 

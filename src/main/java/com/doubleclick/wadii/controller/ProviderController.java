@@ -68,13 +68,13 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
     }
 
     @Override
-    public ResponseEntity<Response<Provider>> delete(Authentication authentication, Long id) {
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         Optional<Provider> providerOptional = providerRepository.findById(id);
         if (providerOptional.isPresent()) {
             providerRepository.deleteById(id);
-            return Response.response(null, "provider deleted successfully", ResponseType.SUCCESS);
+            return Response.response(true, "provider deleted successfully", ResponseType.SUCCESS);
         } else {
-            return Response.response(null, "there is no provider with this id : " + id, ResponseType.NOT_FOUND);
+            return Response.response(false, "there is no provider with this id : " + id, ResponseType.NOT_FOUND);
         }
     }
 
@@ -284,24 +284,24 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
     }
 
     @DeleteMapping("/unfollow-provider/{id}")
-    public ResponseEntity<Response<String>> unfollow(Authentication authentication, @PathVariable Long id) {
+    public ResponseEntity<Response<Boolean>> unfollow(Authentication authentication, @PathVariable Long id) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         Optional<Provider> providerOptional = providerRepository.findById(id);
         if (userOptional.isEmpty()) {
-            return Response.response("null", "user not found", ResponseType.NOT_FOUND);
+            return Response.response(false, "user not found", ResponseType.NOT_FOUND);
         }
         if (providerOptional.isEmpty()) {
-            return Response.response("null", "provider id not exist", ResponseType.NOT_FOUND);
+            return Response.response(false, "provider id not exist", ResponseType.NOT_FOUND);
         }
         FollowerId followerId = new FollowerId(userOptional.get().getId(), id);
         if (!followersRepository.existsById(followerId)) {
-            return Response.response("null", "you are not following this provider", ResponseType.NOT_FOUND);
+            return Response.response(false, "you are not following this provider", ResponseType.NOT_FOUND);
         }
         followersRepository.deleteById(followerId);
         Provider provider = providerOptional.get();
         long count = provider.getFollowersCount();
         provider.setFollowersCount(count > 0 ? count - 1 : 0);
         providerRepository.save(provider);
-        return Response.response("Done", "unfollowed successfully", ResponseType.SUCCESS);
+        return Response.response(true, "unfollowed successfully", ResponseType.SUCCESS);
     }
 }

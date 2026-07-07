@@ -135,20 +135,20 @@ public class OrderController extends Controller<Order, OrderDto, Long> {
 
 
     @Override
-    public ResponseEntity<Response<Order>> delete(Authentication authentication, Long id) {
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
+            return Response.response(false, "authenticated user not found", ResponseType.NOT_FOUND);
         }
         Optional<Order> orderOptional = orderRepository.findById(id);
         if (orderOptional.isPresent()) {
             if (!orderOptional.get().getUser().getId().equals(userOptional.get().getId())) {
-                return Response.response(null, "You can only delete orders you created", ResponseType.SUCCESS);
+                return Response.response(false, "You can only delete orders you created", ResponseType.SUCCESS);
             }
             orderRepository.deleteById(id);
-            return Response.response(null, "order deleted successfully", ResponseType.SUCCESS);
+            return Response.response(true, "order deleted successfully", ResponseType.SUCCESS);
         } else {
-            return Response.response(null, "there is no order with this id : " + id, ResponseType.NOT_FOUND);
+            return Response.response(false, "there is no order with this id : " + id, ResponseType.NOT_FOUND);
         }
     }
 

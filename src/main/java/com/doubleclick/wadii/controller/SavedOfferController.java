@@ -60,12 +60,12 @@ public class SavedOfferController extends Controller<SavedOffer, SavedOfferDto, 
     }
 
     @Override
-    public ResponseEntity<Response<SavedOffer>> delete(Authentication authentication, Long id) {
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         if (!savedOfferRepository.existsById(id)) {
-            return Response.response(null, "No saved offer found with id: " + id, ResponseType.NOT_FOUND);
+            return Response.response(false, "No saved offer found with id: " + id, ResponseType.NOT_FOUND);
         }
         savedOfferRepository.deleteById(id);
-        return Response.response(null, "Saved offer removed successfully", ResponseType.SUCCESS);
+        return Response.response(true, "Saved offer removed successfully", ResponseType.SUCCESS);
     }
 
     @Override
@@ -84,15 +84,15 @@ public class SavedOfferController extends Controller<SavedOffer, SavedOfferDto, 
     }
 
     @DeleteMapping("/remove/{offerId}")
-    public ResponseEntity<Response<String>> removeSavedOffer(Authentication authentication, @PathVariable Long offerId) {
+    public ResponseEntity<Response<Boolean>> removeSavedOffer(Authentication authentication, @PathVariable Long offerId) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "User not found", ResponseType.NOT_FOUND);
+            return Response.response(false, "User not found", ResponseType.NOT_FOUND);
         }
         if (!savedOfferRepository.existsByUserIdAndOfferId(userOptional.get().getId(), offerId)) {
-            return Response.response(null, "Offer is not saved", ResponseType.NOT_FOUND);
+            return Response.response(false, "Offer is not saved", ResponseType.NOT_FOUND);
         }
         savedOfferRepository.deleteByUserIdAndOfferId(userOptional.get().getId(), offerId);
-        return Response.response("Done", "Saved offer removed successfully", ResponseType.SUCCESS);
+        return Response.response(true, "Saved offer removed successfully", ResponseType.SUCCESS);
     }
 }

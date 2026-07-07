@@ -58,13 +58,13 @@ public class SparePartsController extends Controller<SpareParts, SparePartsDto, 
     }
 
     @Override
-    public ResponseEntity<Response<SpareParts>> delete(Authentication authentication, Long id) {
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         Optional<SpareParts> spareParts = sparePartsRepository.findById(id);
         if (spareParts.isPresent()) {
             sparePartsRepository.deleteById(id);
-            return Response.response(null, "car deleted successfully", ResponseType.SUCCESS);
+            return Response.response(true, "car deleted successfully", ResponseType.SUCCESS);
         } else {
-            return Response.response(null, "there is no spare part with this id : " + id, ResponseType.NOT_FOUND);
+            return Response.response(false, "there is no spare part with this id : " + id, ResponseType.NOT_FOUND);
         }
     }
 

@@ -4,10 +4,13 @@ import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.UserNotificationDto;
 import com.doubleclick.wadii.entities.UserNotification;
+import com.doubleclick.wadii.notification.Notification;
+import com.doubleclick.wadii.notification.NotificationService;
 import com.doubleclick.wadii.repository.UserNotificationRepository;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
 import com.doubleclick.wadii.utils.ResponseType;
+import com.google.gson.JsonObject;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -23,6 +26,7 @@ public class UserNotificationController extends Controller<UserNotification, Use
 
     private final UserNotificationRepository userNotificationRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
     @Override
     public ResponseEntity<Response<UserNotification>> show(Long id) {
@@ -74,13 +78,13 @@ public class UserNotificationController extends Controller<UserNotification, Use
     }
 
     @Override
-    public ResponseEntity<Response<UserNotification>> delete(Authentication authentication, Long id) {
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         Optional<UserNotification> notificationOptional = userNotificationRepository.findById(id);
         if (notificationOptional.isPresent()) {
             userNotificationRepository.deleteById(id);
-            return Response.response(null, "notification deleted successfully", ResponseType.SUCCESS);
+            return Response.response(true, "notification deleted successfully", ResponseType.SUCCESS);
         } else {
-            return Response.response(null, "there is no notification with this id : " + id, ResponseType.NOT_FOUND);
+            return Response.response(false, "there is no notification with this id : " + id, ResponseType.NOT_FOUND);
         }
     }
 
@@ -130,6 +134,27 @@ public class UserNotificationController extends Controller<UserNotification, Use
         notification.setIsRead(true);
         notification = userNotificationRepository.save(notification);
         return Response.response(notification, "Notification marked as read", ResponseType.SUCCESS);
+    }
+
+    @PostMapping("/test-send/{userId}")
+    public ResponseEntity<Response<String>> testSendNotification(@PathVariable Long userId) {
+        Optional<User> userOptional = userRepository.findById(userId);
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "there is no user with this id : " + userId, ResponseType.NOT_FOUND);
+        }
+        User user = userOptional.get();
+        if (user.getFcmToken() == null || user.getFcmToken().isBlank()) {
+            return Response.response(null, "user has no fcm token registered", ResponseType.ERROR);
+        }
+        JsonObject message = new JsonObject();
+        message.addProperty("body", "This is a dummy test notification");
+        Notification notification = new Notification("Test Notification", message, "TEST", "SENT", userId);
+        try {
+            String result = notificationService.sendNotification(notification);
+            return Response.response(result, "Test notification sent", ResponseType.SUCCESS);
+        } catch (Exception e) {
+            return Response.response(e.getMessage(), "Failed to send test notification" + e.getMessage(), ResponseType.INTERNAL_SERVER_ERROR);
+        }
     }
 
     @PostMapping("/mark-all-read")

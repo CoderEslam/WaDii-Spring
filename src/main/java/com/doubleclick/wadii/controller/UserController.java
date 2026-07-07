@@ -100,13 +100,13 @@ public class UserController extends Controller<User, UserDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<User>> delete(Authentication authentication, Long id) {
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         Optional<User> userOptional = userRepository.findById(id);
         if (userOptional.isPresent()) {
             userRepository.deleteById(id);
-            return Response.response(null, "user deleted successfully", ResponseType.SUCCESS);
+            return Response.response(true, "user deleted successfully", ResponseType.SUCCESS);
         } else {
-            return Response.response(null, "there is no user with this id : " + id, ResponseType.NOT_FOUND);
+            return Response.response(false, "there is no user with this id : " + id, ResponseType.NOT_FOUND);
         }
     }
 

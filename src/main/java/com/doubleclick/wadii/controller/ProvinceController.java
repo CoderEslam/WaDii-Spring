@@ -73,12 +73,12 @@ public class ProvinceController extends Controller<Province, ProvinceDto, Long> 
     }
 
     @Override
-    public ResponseEntity<Response<Province>> delete(Authentication authentication, Long id) {
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         if (provinceRepository.existsById(id)) {
             provinceRepository.deleteById(id);
-            return Response.response(null, "Province deleted successfully", ResponseType.SUCCESS);
+            return Response.response(true, "Province deleted successfully", ResponseType.SUCCESS);
         } else {
-            return Response.response(null, "No province with id: " + id, ResponseType.NOT_FOUND);
+            return Response.response(false, "No province with id: " + id, ResponseType.NOT_FOUND);
         }
     }
 

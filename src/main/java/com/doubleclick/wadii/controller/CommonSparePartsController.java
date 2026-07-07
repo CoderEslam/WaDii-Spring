@@ -81,20 +81,20 @@ public class CommonSparePartsController extends Controller<CommonSpareParts, Com
     }
 
     @Override
-    public ResponseEntity<Response<CommonSpareParts>> delete(Authentication authentication,Long id) {
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication,Long id) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+            return Response.response(false, "User not exist", ResponseType.SUCCESS);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(false, "You are not admin to do this action", ResponseType.SUCCESS);
         }
         Optional<CommonSpareParts> partOptional = commonSparePartsRepository.findById(id);
         if (partOptional.isPresent()) {
             commonSparePartsRepository.deleteById(id);
-            return Response.response(null, "Spare part deleted successfully", ResponseType.SUCCESS);
+            return Response.response(true, "Spare part deleted successfully", ResponseType.SUCCESS);
         } else {
-            return Response.response(null, "there is no spare part with this id : " + id, ResponseType.NOT_FOUND);
+            return Response.response(false, "there is no spare part with this id : " + id, ResponseType.NOT_FOUND);
         }
     }
 

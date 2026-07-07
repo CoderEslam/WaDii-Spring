@@ -107,20 +107,20 @@ public class OffersController extends Controller<Offer, OfferDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Offer>> delete(Authentication authentication, Long id) {
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+            return Response.response(false, "User not exist", ResponseType.SUCCESS);
         }
         if (userOptional.get().getRole() != Role.PROVIDER) {
-            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+            return Response.response(false, "You are not a provider to do this action", ResponseType.SUCCESS);
         }
         Optional<Offer> offerOptional = offerRepository.findById(id);
         if (offerOptional.isPresent()) {
             offerRepository.deleteById(id);
-            return Response.response(null, "offer deleted successfully", ResponseType.SUCCESS);
+            return Response.response(true, "offer deleted successfully", ResponseType.SUCCESS);
         } else {
-            return Response.response(null, "there is no offer with this id : " + id, ResponseType.NOT_FOUND);
+            return Response.response(false, "there is no offer with this id : " + id, ResponseType.NOT_FOUND);
         }
     }
 

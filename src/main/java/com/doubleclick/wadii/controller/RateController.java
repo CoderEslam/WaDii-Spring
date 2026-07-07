@@ -101,20 +101,20 @@ public class RateController extends Controller<Rate, RateDto, Long> {
     }
 
     @Override
-    public ResponseEntity<Response<Rate>> delete(Authentication authentication, Long id) {
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         Optional<Rate> rateOptional = rateRepository.findById(id);
         if (rateOptional.isPresent()) {
             Optional<User> currentUserOptional = userRepository.findByEmail(authentication.getName());
             if (currentUserOptional.isEmpty()) {
-                return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
+                return Response.response(false, "authenticated user not found", ResponseType.NOT_FOUND);
             }
             if (!rateOptional.get().getUser().getId().equals(currentUserOptional.get().getId())) {
-                return Response.response(null, "You can only delete rates you created", ResponseType.SUCCESS);
+                return Response.response(false, "You can only delete rates you created", ResponseType.SUCCESS);
             }
             rateRepository.deleteById(id);
-            return Response.response(null, "car deleted successfully", ResponseType.SUCCESS);
+            return Response.response(true, "car deleted successfully", ResponseType.SUCCESS);
         } else {
-            return Response.response(null, "there is no car with this id : " + id, ResponseType.NOT_FOUND);
+            return Response.response(false, "there is no car with this id : " + id, ResponseType.NOT_FOUND);
         }
     }
 

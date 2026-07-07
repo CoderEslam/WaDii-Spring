@@ -95,19 +95,19 @@ public class AdvertisementController extends Controller<Advertisement, Advertise
     }
 
     @Override
-    public ResponseEntity<Response<Advertisement>> delete(Authentication authentication, Long id) {
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+            return Response.response(false, "User not exist", ResponseType.SUCCESS);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(false, "You are not admin to do this action", ResponseType.SUCCESS);
         }
         if (!advertisementRepository.existsById(id)) {
-            return Response.response(null, "No advertisement found with id: " + id, ResponseType.NOT_FOUND);
+            return Response.response(false, "No advertisement found with id: " + id, ResponseType.NOT_FOUND);
         }
         advertisementRepository.deleteById(id);
-        return Response.response(null, "Advertisement deleted successfully", ResponseType.SUCCESS);
+        return Response.response(true, "Advertisement deleted successfully", ResponseType.SUCCESS);
     }
 
     @Override
