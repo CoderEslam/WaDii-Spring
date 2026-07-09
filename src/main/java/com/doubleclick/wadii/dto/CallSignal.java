@@ -16,4 +16,5 @@ public class CallSignal {
     private Long toUserId;
     private String fromUserName;
     private String fromUserImage;
+    private String provider; // "AGORA" or "LIVEKIT" — same signal shape for both, relayed opaquely
 }

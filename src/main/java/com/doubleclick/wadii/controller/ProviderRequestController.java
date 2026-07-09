@@ -223,7 +223,6 @@ public class ProviderRequestController {
         Optional<Provider> providerOptional = providerRepository.findByUserId(userId);
         if (providerOptional.isPresent()) {
             userRepository.save(user);
-//            providerRepository.delete(providerOptional.get());
         }
         user.setRole(Role.USER);
         userRepository.save(user);

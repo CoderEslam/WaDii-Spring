@@ -58,21 +58,6 @@ public class NotificationService {
         jsonObjectMessage.addProperty("token", deviceToken);
         jsonObjectMessage.add("notification", body);
         jsonObject.add("message", jsonObjectMessage);
-        String jsonBody = String.format(
-                "{"
-                        + "\"message\":{"
-                        + "  \"token\":\"%s\","
-                        + "  \"notification\":{"
-                        + "    \"title\":\"%s\","
-                        + "    \"body\":\"%s\""
-                        + "  },"
-                        + "  \"data\":{"
-                        + "    \"click_action\":\"FLUTTER_NOTIFICATION_CLICK\""
-                        + "  }"
-                        + "}"
-                        + "}",
-                deviceToken, "WaDii", body
-        );
         HttpEntity<String> entity = new HttpEntity<>(jsonObject.toString(), headers);
         // Make API request with headers
         ResponseEntity<String> response = restTemplate.exchange(FCM_SEND_ENDPOINT, HttpMethod.POST, entity, String.class);
