@@ -6,6 +6,7 @@ import com.doubleclick.wadii.dto.CallSignal;
 import com.doubleclick.wadii.dto.ChatMessagePayload;
 import com.doubleclick.wadii.entities.ChatContact;
 import com.doubleclick.wadii.entities.Message;
+import com.doubleclick.wadii.notification.NotificationService;
 import com.doubleclick.wadii.repository.ChatContactRepository;
 import com.doubleclick.wadii.repository.MessageRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -34,6 +35,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final ChatContactRepository chatContactRepository;
     private final PresenceRegistry presenceRegistry;
     private final ObjectMapper objectMapper;
+    private final NotificationService notificationService;
     private static final String TAG = "ChatWebSocketHandler";
     private static final Set<String> CALL_EVENTS = Set.of("CALL_INVITE", "CALL_ACCEPT", "CALL_REJECT", "CALL_END");
     // userId → open WebSocketSessions (a user may have multiple concurrent sockets, e.g. chat + calls)
@@ -119,7 +121,12 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         signal.setFromUserId(fromUserId);
         if (signal.getToUserId() == null) return;
 
-        sendCallSignal(event, signal);
+        boolean delivered = sendCallSignal(event, signal);
+        if (!delivered && "CALL_INVITE".equals(event)) {
+            // callee has no open socket (backgrounded/killed app) — wake them via push so the
+            // incoming call still rings instead of being silently dropped
+            notificationService.sendCallSignalNotification(signal.getToUserId(), event, signal);
+        }
     }
 
     /**
@@ -173,6 +180,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             if (s.isOpen()) try {
                 s.sendMessage(msg);
             } catch (IOException ignored) {
+                System.out.println(ignored.getMessage());
             }
         }));
     }
