@@ -5,13 +5,17 @@ import com.doubleclick.wadii.auth.repository.UserRepository;
 import com.doubleclick.wadii.dto.ResponseDto;
 import com.doubleclick.wadii.dto.SparePartsPriceDto;
 import com.doubleclick.wadii.entities.*;
+import com.doubleclick.wadii.notification.Notification;
+import com.doubleclick.wadii.notification.NotificationService;
 import com.doubleclick.wadii.repository.OrderRepository;
 import com.doubleclick.wadii.repository.ProviderRepository;
 import com.doubleclick.wadii.repository.ResponseRepository;
 import com.doubleclick.wadii.repository.SparePartsPriceRepository;
+import com.doubleclick.wadii.repository.UserNotificationRepository;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
 import com.doubleclick.wadii.utils.ResponseType;
+import com.google.gson.JsonObject;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -31,6 +35,8 @@ public class ResponseController extends Controller<Responses, ResponseDto, Long>
     private final ProviderRepository providerRepository;
     private final SparePartsPriceRepository sparePartsPriceRepository;
     private final OrderRepository orderRepository;
+    private final UserNotificationRepository userNotificationRepository;
+    private final NotificationService notificationService;
 
     @Override
     public ResponseEntity<Response<Responses>> show(Long id) {
@@ -210,12 +216,44 @@ public class ResponseController extends Controller<Responses, ResponseDto, Long>
                 Responses responses = responsesOptional.get();
                 responses.setResponsesState(ResponsesState.ACCEPT);
                 responses = responseRepository.save(responses);
+
+                sendResponseAcceptedNotification(responses.getProvider().getUser());
+
+                Long acceptedResponseId = responses.getId();
+                List<Responses> otherResponses = responseRepository.findByOrderId(responses.getOrder().getId())
+                        .stream()
+                        .filter(r -> !r.getId().equals(acceptedResponseId))
+                        .collect(Collectors.toList());
+                if (!otherResponses.isEmpty()) {
+                    responseRepository.deleteAll(otherResponses);
+                }
+
                 return Response.response(responses, "All responses", ResponseType.SUCCESS);
             } else {
                 return Response.response(null, "there is no response with this id : " + responseDto.getId(), ResponseType.NOT_FOUND);
             }
         } else {
             return Response.response(null, "there is no user with this email : " + authentication.getName(), ResponseType.NOT_FOUND);
+        }
+    }
+
+    private void sendResponseAcceptedNotification(User providerUser) {
+        String message = "Your response has been accepted.";
+        UserNotification userNotification = new UserNotification();
+        userNotification.setTitle("Response Accepted");
+        userNotification.setBody(message);
+        userNotification.setType("RESPONSE_ACCEPTED");
+        userNotification.setUser(providerUser);
+        userNotificationRepository.save(userNotification);
+
+        if (providerUser.getFcmToken() == null || providerUser.getFcmToken().isBlank()) return;
+        try {
+            JsonObject body = new JsonObject();
+            body.addProperty("body", message);
+            Notification notification = new Notification("Response Accepted", body, "RESPONSE_ACCEPTED", "SENT", providerUser.getId());
+            notificationService.sendNotification(notification);
+        } catch (Exception e) {
+            System.out.println("ResponseController failed to send response-accepted notification: " + e.getMessage());
         }
     }
 
@@ -226,14 +264,35 @@ public class ResponseController extends Controller<Responses, ResponseDto, Long>
             Optional<Responses> responsesOptional = responseRepository.findById(responseDto.getId());
             if (responsesOptional.isPresent()) {
                 Responses responses = responsesOptional.get();
-                responses.setResponsesState(ResponsesState.CANCEL);
-                responses = responseRepository.save(responses);
-                return Response.response(responses, "All responses", ResponseType.SUCCESS);
+                User providerUser = responses.getProvider().getUser();
+                responseRepository.deleteById(responses.getId());
+                sendResponseRejectedNotification(providerUser);
+                return Response.response(responses, "Response rejected", ResponseType.SUCCESS);
             } else {
                 return Response.response(null, "there is no response with this id : " + responseDto.getId(), ResponseType.NOT_FOUND);
             }
         } else {
             return Response.response(null, "there is no user with this email : " + authentication.getName(), ResponseType.NOT_FOUND);
+        }
+    }
+
+    private void sendResponseRejectedNotification(User providerUser) {
+        String message = "Your response has been rejected.";
+        UserNotification userNotification = new UserNotification();
+        userNotification.setTitle("Response Rejected");
+        userNotification.setBody(message);
+        userNotification.setType("RESPONSE_REJECTED");
+        userNotification.setUser(providerUser);
+        userNotificationRepository.save(userNotification);
+
+        if (providerUser.getFcmToken() == null || providerUser.getFcmToken().isBlank()) return;
+        try {
+            JsonObject body = new JsonObject();
+            body.addProperty("body", message);
+            Notification notification = new Notification("Response Rejected", body, "RESPONSE_REJECTED", "SENT", providerUser.getId());
+            notificationService.sendNotification(notification);
+        } catch (Exception e) {
+            System.out.println("ResponseController failed to send response-rejected notification: " + e.getMessage());
         }
     }
 }

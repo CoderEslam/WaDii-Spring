@@ -17,4 +17,6 @@ public interface ResponseRepository extends JpaRepository<Responses, Long> {
 
     @Query("SELECT r FROM Responses r JOIN r.order o JOIN o.user u WHERE u.id = :userId")
     List<Responses> findAllByUserId(@Param("userId") Long userId);
+
+    List<Responses> findByOrderId(Long orderId);
 }
