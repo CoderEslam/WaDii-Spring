@@ -66,8 +66,12 @@ public class UserController extends Controller<User, UserDto, Long> {
                 user.setCity(city.get());
                 if (userDto.getUserType() == 0) {
                     user.setRole(Role.USER);
-                } else {
+                }
+                if (userDto.getUserType() == 1) {
                     user.setRole(Role.PROVIDER);
+                }
+                if (userDto.getUserType() == 2) {
+                    user.setRole(Role.ADMIN);
                 }
                 user = userRepository.save(user);
                 user.setToken(jwtUtil.generateToken(user.getEmail(), user.getId()));
