@@ -1,5 +1,7 @@
 package com.doubleclick.wadii.notification;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -11,9 +13,16 @@ import lombok.Setter;
 @AllArgsConstructor
 @NoArgsConstructor
 public class Notification {
+
+    private static final Gson GSON = new GsonBuilder().create();
+
     private String title;
     private JsonObject message;
     private String type;
     private String status;
     private Long userId;
+
+    public String toJson() {
+        return GSON.toJson(this);
+    }
 }

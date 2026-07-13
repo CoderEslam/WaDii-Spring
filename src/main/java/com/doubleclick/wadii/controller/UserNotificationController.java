@@ -151,7 +151,7 @@ public class UserNotificationController extends Controller<UserNotification, Use
         Notification notification = new Notification("Test Notification", message, "TEST", "SENT", userId);
         try {
             String result = notificationService.sendNotification(notification);
-            return Response.response(result, "Test notification sent", ResponseType.SUCCESS);
+            return Response.response(result + "  " + notification.toJson(), "Test notification sent", ResponseType.SUCCESS);
         } catch (Exception e) {
             return Response.response(e.getMessage(), "Failed to send test notification" + e.getMessage(), ResponseType.INTERNAL_SERVER_ERROR);
         }

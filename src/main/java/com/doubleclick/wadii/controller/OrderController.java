@@ -2,14 +2,20 @@ package com.doubleclick.wadii.controller;
 
 import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.auth.repository.UserRepository;
+import com.doubleclick.wadii.dto.OrderCancelRequest;
 import com.doubleclick.wadii.dto.OrderDto;
 import com.doubleclick.wadii.dto.SparePartsDto;
 import com.doubleclick.wadii.entities.Order;
+import com.doubleclick.wadii.entities.OrderCancel;
+import com.doubleclick.wadii.entities.OrderStatus;
+import com.doubleclick.wadii.entities.Reason;
 import com.doubleclick.wadii.entities.Service;
 import com.doubleclick.wadii.entities.SpareParts;
 import com.doubleclick.wadii.entities.Provider;
+import com.doubleclick.wadii.repository.OrderCancelRepository;
 import com.doubleclick.wadii.repository.OrderRepository;
 import com.doubleclick.wadii.repository.ProviderRepository;
+import com.doubleclick.wadii.repository.ReasonRepository;
 import com.doubleclick.wadii.repository.ServiceRepository;
 import com.doubleclick.wadii.repository.SparePartsRepository;
 import com.doubleclick.wadii.ts.Controller;
@@ -35,6 +41,8 @@ public class OrderController extends Controller<Order, OrderDto, Long> {
     private final SparePartsRepository sparePartsRepository;
     private final ServiceRepository serviceRepository;
     private final ProviderRepository providerRepository;
+    private final OrderCancelRepository orderCancelRepository;
+    private final ReasonRepository reasonRepository;
 
     @Override
     public ResponseEntity<Response<Order>> show(Long id) {
@@ -184,5 +192,44 @@ public class OrderController extends Controller<Order, OrderDto, Long> {
         }
         List<Order> orders = orderRepository.findOrdersByProviderId(providerOptional.get().getId());
         return Response.response(orders, "All orders for provider", ResponseType.SUCCESS);
+    }
+
+    @PostMapping("/cancel")
+    public ResponseEntity<Response<Order>> cancelOrder(Authentication authentication, @RequestBody OrderCancelRequest orderCancelRequest) {
+        if (orderCancelRequest.getOrderId() == null) {
+            return Response.response(null, "order id is required", ResponseType.ERROR);
+        }
+        if (orderCancelRequest.getReasonId() == null) {
+            return Response.response(null, "reason id is required", ResponseType.ERROR);
+        }
+        Optional<Order> orderOptional = orderRepository.findById(orderCancelRequest.getOrderId().longValue());
+        if (orderOptional.isEmpty()) {
+            return Response.response(null, "there is no order with this id : " + orderCancelRequest.getOrderId(), ResponseType.NOT_FOUND);
+        }
+        Order order = orderOptional.get();
+
+        Optional<Reason> reasonOptional = reasonRepository.findById(orderCancelRequest.getReasonId());
+        if (reasonOptional.isEmpty()) {
+            return Response.response(null, "there is no reason with this id : " + orderCancelRequest.getReasonId(), ResponseType.NOT_FOUND);
+        }
+        Reason reason = reasonOptional.get();
+
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
+        }
+        if (!order.getUser().getId().equals(userOptional.get().getId())) {
+            return Response.response(null, "You can only cancel orders you created", ResponseType.FORBIDDEN);
+        }
+
+        order.setStatus(OrderStatus.CANCELED);
+        order = orderRepository.save(order);
+
+        OrderCancel orderCancel = new OrderCancel();
+        orderCancel.setOrder(order);
+        orderCancel.setReason(reason);
+        orderCancelRepository.save(orderCancel);
+
+        return Response.response(order, "Order canceled successfully", ResponseType.SUCCESS);
     }
 }
