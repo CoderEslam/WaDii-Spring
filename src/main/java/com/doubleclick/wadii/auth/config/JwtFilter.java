@@ -27,8 +27,10 @@ public class JwtFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
         String path = request.getRequestURI();
-        // Skip filtering for auth, ws, and public image endpoints
-        if (path.startsWith("/auth") || path.startsWith("/ws") || path.startsWith("/web-socket") || path.startsWith("/countries") || path.startsWith("/provinces") || path.startsWith("/cities") || path.matches("/users/[^/]+\\.[^/]+")) {
+        String method = request.getMethod();
+        boolean isPublicReadPath = (path.startsWith("/countries") || path.startsWith("/provinces") || path.startsWith("/cities")) && "GET".equalsIgnoreCase(method);
+        // Skip filtering for auth, ws, public image endpoints, and public read-only lookups
+        if (path.startsWith("/auth") || path.startsWith("/ws") || path.startsWith("/web-socket") || isPublicReadPath || path.matches("/users/[^/]+\\.[^/]+")) {
             filterChain.doFilter(request, response);
             return;
         }

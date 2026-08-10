@@ -147,4 +147,16 @@ public class OffersController extends Controller<Offer, OfferDto, Long> {
         }
         return Response.response(offers, "Offers filtered by service", ResponseType.SUCCESS);
     }
+
+    @GetMapping("/filter-by-services")
+    public ResponseEntity<Response<List<Offer>>> filterByServices(@RequestParam List<Long> serviceIds) {
+        List<Offer> offers = offerRepository.findAllByServiceIdIn(serviceIds);
+        Authentication authentication = getContext().getAuthentication();
+        if (authentication != null && authentication.getCredentials() instanceof String idStr) {
+            Long userId = Long.parseLong(idStr);
+            Set<Long> savedOfferIds = savedOfferRepository.findOfferIdsByUserId(userId);
+            offers.forEach(offer -> offer.setSaved(savedOfferIds.contains(offer.getId())));
+        }
+        return Response.response(offers, "Offers filtered by services", ResponseType.SUCCESS);
+    }
 }

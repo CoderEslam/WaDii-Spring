@@ -15,5 +15,8 @@ public interface ProviderRepository extends JpaRepository<Provider, Long> {
     @Query("SELECT DISTINCT p FROM Provider p JOIN p.services s WHERE s.id = :serviceId")
     List<Provider> findAllByServiceId(@Param("serviceId") Long serviceId);
 
+    @Query("SELECT DISTINCT p FROM Provider p JOIN p.services s WHERE s.id IN :serviceIds")
+    List<Provider> findAllByServiceIdIn(@Param("serviceIds") List<Long> serviceIds);
+
     List<Provider> findByNameContainingIgnoreCase(String q);
 }

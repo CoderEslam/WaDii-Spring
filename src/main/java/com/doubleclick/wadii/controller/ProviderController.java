@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @RequiredArgsConstructor
@@ -63,8 +64,104 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
     }
 
     @Override
-    public ResponseEntity<Response<Provider>> update(Authentication authentication, ProviderDto providerDto) {
-        return null;
+    public ResponseEntity<Response<Provider>> update(Authentication authentication, @RequestBody ProviderDto providerDto) {
+        if (providerDto.getId() == null) {
+            return Response.response(null, "provider id is required", ResponseType.ERROR);
+        }
+        Optional<Provider> providerOptional = providerRepository.findById(providerDto.getId());
+        if (providerOptional.isEmpty()) {
+            return Response.response(null, "there is no provider with this id : " + providerDto.getId(), ResponseType.NOT_FOUND);
+        }
+        Provider provider = providerOptional.get();
+
+        // Update the owner of the provider
+        if (providerDto.getUserId() != null) {
+            Optional<User> userOptional = userRepository.findById(providerDto.getUserId());
+            if (userOptional.isEmpty()) {
+                return Response.response(null, "there is no user with this id : " + providerDto.getUserId(), ResponseType.NOT_FOUND);
+            }
+            provider.setUser(userOptional.get());
+        }
+
+        // Update basic info
+        if (providerDto.getRate() != null) provider.setRate(providerDto.getRate());
+        if (providerDto.getFollowersCount() != null) provider.setFollowersCount(providerDto.getFollowersCount());
+
+        // Update branches and their work times
+        if (providerDto.getBranches() != null) {
+            for (Branch b : providerDto.getBranches()) {
+                Branch branch = b.getId() != null
+                        ? branchRepository.findById(b.getId()).orElseGet(Branch::new)
+                        : new Branch();
+                if (branch.getId() == null && (b.getName() == null || b.getName().trim().isEmpty())) {
+                    return Response.response(null, "branch name is required", ResponseType.ERROR);
+                }
+                if (b.getName() != null) branch.setName(b.getName());
+                if (b.getAddress() != null) branch.setAddress(b.getAddress());
+                branch.setProvider(provider);
+                branch = branchRepository.save(branch);
+                if (b.getWorkTimes() != null) {
+                    for (WorkTime wt : b.getWorkTimes()) {
+                        WorkTime workTime = wt.getId() != null
+                                ? workTimeRepository.findById(wt.getId()).orElseGet(WorkTime::new)
+                                : workTimeRepository.findByBranchIdAndDay(branch.getId(), wt.getDay()).orElseGet(WorkTime::new);
+                        if (wt.getDay() != null) workTime.setDay(wt.getDay());
+                        if (wt.getStartTime() != null) workTime.setStartTime(wt.getStartTime());
+                        if (wt.getCloseTime() != null) workTime.setCloseTime(wt.getCloseTime());
+                        workTime.setBranch(branch);
+                        workTimeRepository.save(workTime);
+                    }
+                }
+            }
+        }
+
+        // Update services (only the ids are used, the nested providers are ignored)
+        if (providerDto.getServices() != null) {
+            List<Long> serviceIds = providerDto.getServices().stream()
+                    .map(ProviderDto.ServiceRef::getId)
+                    .filter(Objects::nonNull)
+                    .toList();
+            List<Service> oldServices = provider.getServices();
+            for (Service oldService : oldServices) {
+                oldService.getProviders().remove(provider);
+                serviceRepository.save(oldService);
+            }
+            List<Service> newServices = serviceRepository.findAllById(serviceIds);
+            for (Service newService : newServices) {
+                newService.getProviders().add(provider);
+                serviceRepository.save(newService);
+            }
+            provider.setServices(newServices);
+        }
+
+        // Update links
+        if (providerDto.getLinks() != null) {
+            for (Links l : providerDto.getLinks()) {
+                Links link = l.getId() != null
+                        ? linksRepository.findById(l.getId()).orElseGet(Links::new)
+                        : new Links();
+                if (l.getLink() != null) link.setLink(l.getLink());
+                link.setProvider(provider);
+                linksRepository.save(link);
+            }
+        }
+
+        // Update offers
+        if (providerDto.getOffers() != null) {
+            for (Offer o : providerDto.getOffers()) {
+                Offer offer = o.getId() != null
+                        ? offerRepository.findById(o.getId()).orElseGet(Offer::new)
+                        : new Offer();
+                if (o.getTitle() != null) offer.setTitle(o.getTitle());
+                if (o.getDescription() != null) offer.setDescription(o.getDescription());
+                if (o.getEndDate() != null) offer.setEndDate(o.getEndDate());
+                offer.setProvider(provider);
+                offerRepository.save(offer);
+            }
+        }
+
+        provider = providerRepository.save(provider);
+        return Response.response(provider, "provider updated successfully", ResponseType.SUCCESS);
     }
 
     @Override
@@ -98,6 +195,12 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
     public ResponseEntity<Response<List<Provider>>> filterByService(@PathVariable Long serviceId) {
         List<Provider> providers = providerRepository.findAllByServiceId(serviceId);
         return Response.response(providers, "Providers filtered by service", ResponseType.SUCCESS);
+    }
+
+    @GetMapping("/filter-by-services")
+    public ResponseEntity<Response<List<Provider>>> filterByServices(@RequestParam List<Long> serviceIds) {
+        List<Provider> providers = providerRepository.findAllByServiceIdIn(serviceIds);
+        return Response.response(providers, "Providers filtered by services", ResponseType.SUCCESS);
     }
 
     public ResponseEntity<Response<Provider>> getProviderByUserId(Long userId) {

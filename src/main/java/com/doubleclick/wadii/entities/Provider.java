@@ -52,6 +52,7 @@ public class Provider {
 
     @OneToMany(mappedBy = "provider", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonIgnoreProperties("provider")
+    @JsonIgnore
     private List<Follower> followers; // <-- providers followed by users
 
     @OneToOne
