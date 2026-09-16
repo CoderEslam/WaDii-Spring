@@ -53,6 +53,8 @@ public class SecurityConfig {
         http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**")
+                        .permitAll()
                         .requestMatchers("/auth/**", "/ws/**", "/ws-native/**", "/web-socket/**", "/users/{filename:.+}")
                         .permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/countries/**", "/provinces/**", "/cities/**")

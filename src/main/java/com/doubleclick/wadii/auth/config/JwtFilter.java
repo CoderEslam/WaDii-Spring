@@ -29,8 +29,8 @@ public class JwtFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         String method = request.getMethod();
         boolean isPublicReadPath = (path.startsWith("/countries") || path.startsWith("/provinces") || path.startsWith("/cities")) && "GET".equalsIgnoreCase(method);
-        // Skip filtering for auth, ws, public image endpoints, and public read-only lookups
-        if (path.startsWith("/auth") || path.startsWith("/ws") || path.startsWith("/web-socket") || isPublicReadPath || path.matches("/users/[^/]+\\.[^/]+")) {
+        // Skip filtering for CORS preflight, auth, ws, public image endpoints, and public read-only lookups
+        if ("OPTIONS".equalsIgnoreCase(method) || path.startsWith("/auth") || path.startsWith("/ws") || path.startsWith("/web-socket") || isPublicReadPath || path.matches("/users/[^/]+\\.[^/]+")) {
             filterChain.doFilter(request, response);
             return;
         }
