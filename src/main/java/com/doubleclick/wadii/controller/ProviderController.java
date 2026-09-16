@@ -1,13 +1,16 @@
 package com.doubleclick.wadii.controller;
 
+import com.doubleclick.wadii.auth.config.JwtUtil;
 import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.auth.repository.UserRepository;
+import com.doubleclick.wadii.dto.CreateProviderDto;
 import com.doubleclick.wadii.dto.ProviderDto;
 import com.doubleclick.wadii.dto.ServicesProviderDto;
 import com.doubleclick.wadii.dto.UpdateProviderDto;
 import com.doubleclick.wadii.entities.*;
 import org.springframework.web.bind.annotation.RequestBody;
 import com.doubleclick.wadii.repository.BranchRepository;
+import com.doubleclick.wadii.repository.CityRepository;
 import com.doubleclick.wadii.repository.FollowersRepository;
 import com.doubleclick.wadii.repository.LinksRepository;
 import com.doubleclick.wadii.repository.OfferRepository;
@@ -20,6 +23,7 @@ import com.doubleclick.wadii.utils.ResponseType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -40,6 +44,9 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
     private final OfferRepository offerRepository;
     private final BranchRepository branchRepository;
     private final WorkTimeRepository workTimeRepository;
+    private final CityRepository cityRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtUtil jwtUtil;
 
     @Override
     public ResponseEntity<Response<Provider>> show(Long id) {
@@ -406,5 +413,120 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
         provider.setFollowersCount(count > 0 ? count - 1 : 0);
         providerRepository.save(provider);
         return Response.response(true, "unfollowed successfully", ResponseType.SUCCESS);
+    }
+
+    @PostMapping("/create-by-admin")
+    public ResponseEntity<Response<Provider>> createByAdmin(Authentication authentication, @RequestBody CreateProviderDto dto) {
+        Optional<User> adminOptional = userRepository.findByEmail(authentication.getName());
+        if (adminOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+        }
+        if (adminOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+        }
+
+        if (dto.getEmail() == null || dto.getEmail().trim().isEmpty()) {
+            return Response.response(null, "email is required", ResponseType.ERROR);
+        }
+        if (dto.getPassword() == null || dto.getPassword().trim().isEmpty()) {
+            return Response.response(null, "password is required", ResponseType.ERROR);
+        }
+        if (dto.getProviderName() == null || dto.getProviderName().trim().isEmpty()) {
+            return Response.response(null, "providerName is required", ResponseType.ERROR);
+        }
+        if (userRepository.findByEmail(dto.getEmail()).isPresent()) {
+            return Response.response(null, "User already exists with this email = " + dto.getEmail(), ResponseType.ERROR);
+        }
+
+        City city = null;
+        if (dto.getCityId() != null) {
+            Optional<City> cityOptional = cityRepository.findById(dto.getCityId());
+            if (cityOptional.isEmpty()) {
+                return Response.response(null, "this city id not exist with id = " + dto.getCityId(), ResponseType.ERROR);
+            }
+            city = cityOptional.get();
+        }
+
+        // 1) Create the user account
+        User user = new User();
+        user.setFirstName(dto.getFirstName());
+        user.setLastName(dto.getLastName());
+        user.setEmail(dto.getEmail());
+        user.setPhone(dto.getPhone());
+        user.setCity(city);
+        user.setImage("download.jpeg");
+        user.setBackgroundImage("download.jpeg");
+        user.setRole(Role.PROVIDER);
+        user.setPassword(passwordEncoder.encode(dto.getPassword()));
+        user = userRepository.save(user);
+        user.setToken(jwtUtil.generateToken(user.getEmail(), user.getId()));
+        user = userRepository.save(user);
+
+        // 2) Create the provider linked to that user
+        Provider provider = new Provider();
+        provider.setUser(user);
+        provider.setName(dto.getProviderName());
+        provider.setFollowersCount(0L);
+        provider.setRate(dto.getRate() != null ? dto.getRate() : 0.0);
+        provider = providerRepository.save(provider);
+
+        // 3) Branches and their work times
+        if (dto.getBranches() != null) {
+            for (CreateProviderDto.Branch b : dto.getBranches()) {
+                if (b.getName() == null || b.getName().trim().isEmpty()) {
+                    return Response.response(null, "branch name is required", ResponseType.ERROR);
+                }
+                Branch branch = new Branch();
+                branch.setName(b.getName());
+                branch.setAddress(b.getAddress());
+                branch.setProvider(provider);
+                branch = branchRepository.save(branch);
+                if (b.getWorkTimes() != null) {
+                    for (CreateProviderDto.WorkTime wt : b.getWorkTimes()) {
+                        WorkTime workTime = new WorkTime();
+                        workTime.setDay(wt.getDay());
+                        workTime.setStartTime(wt.getStartTime());
+                        workTime.setCloseTime(wt.getCloseTime());
+                        workTime.setBranch(branch);
+                        workTimeRepository.save(workTime);
+                    }
+                }
+            }
+        }
+
+        // 4) Services
+        if (dto.getServiceIds() != null && !dto.getServiceIds().isEmpty()) {
+            List<Service> services = serviceRepository.findAllById(dto.getServiceIds());
+            for (Service service : services) {
+                service.getProviders().add(provider);
+                serviceRepository.save(service);
+            }
+            provider.setServices(services);
+        }
+
+        // 5) Links
+        if (dto.getLinks() != null) {
+            for (CreateProviderDto.Link l : dto.getLinks()) {
+                Links link = new Links();
+                link.setLink(l.getLink());
+                link.setProvider(provider);
+                linksRepository.save(link);
+            }
+        }
+
+        // 6) Offers
+        if (dto.getOffers() != null) {
+            for (CreateProviderDto.Offer o : dto.getOffers()) {
+                Offer offer = new Offer();
+                offer.setTitle(o.getTitle());
+                offer.setDescription(o.getDescription());
+                if (o.getEndDate() != null) offer.setEndDate(LocalDate.parse(o.getEndDate()));
+                offer.setProvider(provider);
+                offerRepository.save(offer);
+            }
+        }
+
+        provider = providerRepository.save(provider);
+        return Response.response(provider, "provider created successfully", ResponseType.SUCCESS);
     }
 }
