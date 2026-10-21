@@ -27,16 +27,22 @@ public class UserNotificationController extends Controller<UserNotification, Use
     private final UserNotificationRepository userNotificationRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final com.doubleclick.wadii.auth.service.CurrentUserService currentUserService;
 
     @Override
     public ResponseEntity<Response<UserNotification>> show(Long id) {
+        User caller = currentUserService.user();
         return userNotificationRepository.findById(id)
-                .map(notification -> Response.response(notification, "Done", ResponseType.SUCCESS))
+                .map(notification -> {
+                    currentUserService.requireSelfOrAdmin(caller, notification.getUser().getId());
+                    return Response.response(notification, "Done", ResponseType.SUCCESS);
+                })
                 .orElseGet(() -> Response.response(null, "there is no notification with this id : " + id, ResponseType.NOT_FOUND));
     }
 
     @Override
     public ResponseEntity<Response<UserNotification>> insert(Authentication authentication, @RequestBody UserNotificationDto dto) {
+        currentUserService.admin(authentication);
         if (dto.isNotEmpty()) {
             Optional<User> userOptional = userRepository.findById(dto.getUserId());
             if (userOptional.isEmpty()) {
@@ -56,6 +62,7 @@ public class UserNotificationController extends Controller<UserNotification, Use
 
     @Override
     public ResponseEntity<Response<UserNotification>> update(Authentication authentication, @RequestBody UserNotificationDto dto) {
+        currentUserService.admin(authentication);
         if (dto.getId() == null) {
             return Response.response(null, "notification id is required", ResponseType.ERROR);
         }
@@ -79,8 +86,10 @@ public class UserNotificationController extends Controller<UserNotification, Use
 
     @Override
     public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
+        User caller = currentUserService.user(authentication);
         Optional<UserNotification> notificationOptional = userNotificationRepository.findById(id);
         if (notificationOptional.isPresent()) {
+            currentUserService.requireSelfOrAdmin(caller, notificationOptional.get().getUser().getId());
             userNotificationRepository.deleteById(id);
             return Response.response(true, "notification deleted successfully", ResponseType.SUCCESS);
         } else {
@@ -90,6 +99,7 @@ public class UserNotificationController extends Controller<UserNotification, Use
 
     @Override
     public ResponseEntity<Response<List<UserNotification>>> readAll() {
+        currentUserService.admin();
         return Response.response(userNotificationRepository.findAll(), "All notifications", ResponseType.SUCCESS);
     }
 
@@ -125,19 +135,24 @@ public class UserNotificationController extends Controller<UserNotification, Use
     }
 
     @PostMapping("/mark-read/{id}")
-    public ResponseEntity<Response<UserNotification>> markAsRead(@PathVariable Long id) {
+    public ResponseEntity<Response<UserNotification>> markAsRead(Authentication authentication, @PathVariable Long id) {
+        User caller = currentUserService.user(authentication);
         Optional<UserNotification> notificationOptional = userNotificationRepository.findById(id);
         if (notificationOptional.isEmpty()) {
             return Response.response(null, "there is no notification with this id : " + id, ResponseType.NOT_FOUND);
         }
         UserNotification notification = notificationOptional.get();
+        if (!notification.getUser().getId().equals(caller.getId())) {
+            throw com.doubleclick.wadii.exception.ApiException.forbidden("You can only mark your own notifications as read");
+        }
         notification.setIsRead(true);
         notification = userNotificationRepository.save(notification);
         return Response.response(notification, "Notification marked as read", ResponseType.SUCCESS);
     }
 
     @PostMapping("/test-send/{userId}")
-    public ResponseEntity<Response<String>> testSendNotification(@PathVariable Long userId) {
+    public ResponseEntity<Response<String>> testSendNotification(Authentication authentication, @PathVariable Long userId) {
+        currentUserService.admin(authentication);
         Optional<User> userOptional = userRepository.findById(userId);
         if (userOptional.isEmpty()) {
             return Response.response(null, "there is no user with this id : " + userId, ResponseType.NOT_FOUND);

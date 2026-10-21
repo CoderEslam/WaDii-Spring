@@ -19,6 +19,7 @@ public class CustomUserDetailsService implements UserDetailsService {
         return userRepository.findByEmail(email)
                 .map(user -> User.withUsername(user.getEmail())
                         .password(user.getPassword())  // passwords must be encrypted
+                        .roles(user.getRole().name())
                         .build())
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + email));
     }

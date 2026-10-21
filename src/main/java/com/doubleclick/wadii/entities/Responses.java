@@ -8,12 +8,16 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
 @Setter
 @Getter
-@Table(name = "responses")
+@Table(name = "responses", uniqueConstraints = @UniqueConstraint(columnNames = {"order_id", "provider_id"}))
 @AllArgsConstructor
 @NoArgsConstructor
 public class Responses {
@@ -42,4 +46,22 @@ public class Responses {
     @Enumerated(EnumType.STRING)
     @Column(nullable = true)
     private ResponsesState responsesState;
+
+    @Column(precision = 19, scale = 2)
+    private BigDecimal totalPrice;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = createdAt;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 }

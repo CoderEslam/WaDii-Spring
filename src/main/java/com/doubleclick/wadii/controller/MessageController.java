@@ -34,12 +34,24 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
     private final ChatContactRepository chatContactRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final NotificationService notificationService;
+    private final com.doubleclick.wadii.auth.service.CurrentUserService currentUserService;
+    private final com.doubleclick.wadii.service.ChatAccessService chatAccessService;
     private static final String TAG = "MessageController";
+    private static final java.util.Set<String> MESSAGE_TYPES = java.util.Set.of("text", "image", "audio");
 
+    /** Only the sender, the receiver and admins can read a message. */
     @Override
     public ResponseEntity<Response<Message>> show(Long id) {
+        User caller = currentUserService.user();
         return messageRepository.findById(id)
-                .map(message -> Response.response(message, "Done", ResponseType.SUCCESS))
+                .map(message -> {
+                    boolean participant = message.getFromUser().getId().equals(caller.getId())
+                            || message.getToUser().getId().equals(caller.getId());
+                    if (!participant && !currentUserService.isAdmin(caller)) {
+                        throw com.doubleclick.wadii.exception.ApiException.forbidden("You are not allowed to read this message");
+                    }
+                    return Response.response(message, "Done", ResponseType.SUCCESS);
+                })
                 .orElseGet(() -> Response.response(null, "there is no message with this id : " + id, ResponseType.NOT_FOUND));
     }
 
@@ -54,6 +66,11 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
             if (toUserOptional.isEmpty()) {
                 return Response.response(null, "there is no user with this id : " + messageDto.getToUserId(), ResponseType.NOT_FOUND);
             }
+            if (!MESSAGE_TYPES.contains(messageDto.getType().trim().toLowerCase())) {
+                throw com.doubleclick.wadii.exception.ApiException.badRequest("type must be text, image or audio");
+            }
+            // Chat is only allowed with the user connected through an accepted order.
+            chatAccessService.require(fromUserOptional.get().getId(), toUserOptional.get().getId());
             Message message = new Message();
             message.setText(messageDto.getText());
             message.setType(messageDto.getType());
@@ -86,7 +103,7 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
         }
         Message message = messageOptional.get();
         if (!message.getFromUser().getId().equals(userOptional.get().getId())) {
-            return Response.response(null, "You can only update messages you created", ResponseType.SUCCESS);
+            return Response.response(null, "You can only update messages you created", ResponseType.FORBIDDEN);
         }
         if (messageDto.getText() != null && !messageDto.getText().trim().isEmpty()) {
             message.setText(messageDto.getText());
@@ -107,7 +124,7 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
         Optional<Message> messageOptional = messageRepository.findById(id);
         if (messageOptional.isPresent()) {
             if (!messageOptional.get().getFromUser().getId().equals(userOptional.get().getId())) {
-                return Response.response(false, "You can only delete messages you created", ResponseType.SUCCESS);
+                return Response.response(false, "You can only delete messages you created", ResponseType.FORBIDDEN);
             }
             messageRepository.deleteById(id);
             return Response.response(true, "message deleted successfully", ResponseType.SUCCESS);
@@ -118,6 +135,7 @@ public class MessageController extends Controller<Message, MessageDto, Long> {
 
     @Override
     public ResponseEntity<Response<List<Message>>> readAll() {
+        currentUserService.admin();
         return Response.response(messageRepository.findAll(), "All messages", ResponseType.SUCCESS);
     }
 

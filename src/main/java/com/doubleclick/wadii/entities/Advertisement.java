@@ -53,7 +53,7 @@ public class Advertisement {
         updatedAt = LocalDateTime.now();
         impressions = 0L;
         clicks = 0L;
-        status = AdvertisementStatus.ACTIVE;
+        if (status == null) status = AdvertisementStatus.ACTIVE;
     }
 
     @PreUpdate

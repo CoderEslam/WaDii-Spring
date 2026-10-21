@@ -24,6 +24,7 @@ public class LiveKitController {
 
     private final LiveKitTokenService liveKitTokenService;
     private final UserRepository userRepository;
+    private final com.doubleclick.wadii.service.ChatAccessService chatAccessService;
 
     @PostMapping("/token")
     public ResponseEntity<Response<LiveKitTokenResponse>> token(Authentication authentication, @RequestBody LiveKitTokenRequest request) {
@@ -45,8 +46,6 @@ public class LiveKitController {
 
         String token = liveKitTokenService.buildAccessToken(request.getRoomName(), request.getIdentity(), request.getParticipantName());
         LiveKitTokenResponse response = new LiveKitTokenResponse(liveKitTokenService.getUrl(), token);
-        System.out.println(request);
-        System.out.println(response);
         return Response.response(response, "LiveKit token generated", ResponseType.SUCCESS);
     }
 
@@ -57,7 +56,9 @@ public class LiveKitController {
         try {
             long a = Long.parseLong(parts[0]);
             long b = Long.parseLong(parts[1]);
-            return a == userId || b == userId;
+            if (a != userId && b != userId) return false;
+            // calls are only allowed with the user connected through an accepted order
+            return chatAccessService.canCommunicate(a, b);
         } catch (NumberFormatException e) {
             return false;
         }

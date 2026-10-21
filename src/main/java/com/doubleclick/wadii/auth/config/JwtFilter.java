@@ -40,7 +40,6 @@ public class JwtFilter extends OncePerRequestFilter {
             try {
                 String email = jwtUtil.extractEmail(token);
                 String id = jwtUtil.extractId(token);
-                System.out.println("ID: " + id + " Email: " + email);
                 if (email != null && authenticationUtil.authentication() == null) {
                     UserDetails userDetails = userDetailsService.loadUserByUsername(email);
                     if (jwtUtil.validateToken(token, email)) {

@@ -1,14 +1,14 @@
 package com.doubleclick.wadii.controller;
 
-import com.doubleclick.wadii.auth.config.JwtUtil;
 import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.auth.repository.UserRepository;
+import com.doubleclick.wadii.auth.service.CurrentUserService;
 import com.doubleclick.wadii.dto.CreateProviderDto;
 import com.doubleclick.wadii.dto.ProviderDto;
 import com.doubleclick.wadii.dto.ServicesProviderDto;
 import com.doubleclick.wadii.dto.UpdateProviderDto;
 import com.doubleclick.wadii.entities.*;
-import org.springframework.web.bind.annotation.RequestBody;
+import com.doubleclick.wadii.exception.ApiException;
 import com.doubleclick.wadii.repository.BranchRepository;
 import com.doubleclick.wadii.repository.CityRepository;
 import com.doubleclick.wadii.repository.FollowersRepository;
@@ -24,10 +24,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -46,140 +49,15 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
     private final WorkTimeRepository workTimeRepository;
     private final CityRepository cityRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtUtil jwtUtil;
+    private final CurrentUserService currentUserService;
+
+    // ---------------------------------------------------------------- read
 
     @Override
     public ResponseEntity<Response<Provider>> show(Long id) {
         return providerRepository.findById(id)
                 .map(provider -> Response.response(provider, "Done", ResponseType.SUCCESS))
-                .orElseGet(() -> Response.response(null, "there is no city with this id : " + id, ResponseType.NOT_FOUND));
-    }
-
-    @Override
-    public ResponseEntity<Response<Provider>> insert(Authentication authentication, @RequestBody ProviderDto providerDto) {
-        Optional<User> userOptional = userRepository.findById(providerDto.getUserId());
-        if (userOptional.isPresent()) {
-            Provider provider = new Provider();
-            provider.setUser(userOptional.get());
-            provider.setFollowersCount(0L);
-            provider.setRate(0.0);
-            provider = providerRepository.save(provider);
-            return Response.response(provider, "provider saved successfully", ResponseType.SUCCESS);
-        } else {
-            return Response.response(null, "there is no user with this id : " + providerDto.getUserId(), ResponseType.NOT_FOUND);
-        }
-    }
-
-    @Override
-    public ResponseEntity<Response<Provider>> update(Authentication authentication, @RequestBody ProviderDto providerDto) {
-        if (providerDto.getId() == null) {
-            return Response.response(null, "provider id is required", ResponseType.ERROR);
-        }
-        Optional<Provider> providerOptional = providerRepository.findById(providerDto.getId());
-        if (providerOptional.isEmpty()) {
-            return Response.response(null, "there is no provider with this id : " + providerDto.getId(), ResponseType.NOT_FOUND);
-        }
-        Provider provider = providerOptional.get();
-
-        // Update the owner of the provider
-        if (providerDto.getUserId() != null) {
-            Optional<User> userOptional = userRepository.findById(providerDto.getUserId());
-            if (userOptional.isEmpty()) {
-                return Response.response(null, "there is no user with this id : " + providerDto.getUserId(), ResponseType.NOT_FOUND);
-            }
-            provider.setUser(userOptional.get());
-        }
-
-        // Update basic info
-        if (providerDto.getRate() != null) provider.setRate(providerDto.getRate());
-        if (providerDto.getFollowersCount() != null) provider.setFollowersCount(providerDto.getFollowersCount());
-
-        // Update branches and their work times
-        if (providerDto.getBranches() != null) {
-            for (Branch b : providerDto.getBranches()) {
-                Branch branch = b.getId() != null
-                        ? branchRepository.findById(b.getId()).orElseGet(Branch::new)
-                        : new Branch();
-                if (branch.getId() == null && (b.getName() == null || b.getName().trim().isEmpty())) {
-                    return Response.response(null, "branch name is required", ResponseType.ERROR);
-                }
-                if (b.getName() != null) branch.setName(b.getName());
-                if (b.getAddress() != null) branch.setAddress(b.getAddress());
-                branch.setProvider(provider);
-                branch = branchRepository.save(branch);
-                if (b.getWorkTimes() != null) {
-                    for (WorkTime wt : b.getWorkTimes()) {
-                        WorkTime workTime = wt.getId() != null
-                                ? workTimeRepository.findById(wt.getId()).orElseGet(WorkTime::new)
-                                : workTimeRepository.findByBranchIdAndDay(branch.getId(), wt.getDay()).orElseGet(WorkTime::new);
-                        if (wt.getDay() != null) workTime.setDay(wt.getDay());
-                        if (wt.getStartTime() != null) workTime.setStartTime(wt.getStartTime());
-                        if (wt.getCloseTime() != null) workTime.setCloseTime(wt.getCloseTime());
-                        workTime.setBranch(branch);
-                        workTimeRepository.save(workTime);
-                    }
-                }
-            }
-        }
-
-        // Update services (only the ids are used, the nested providers are ignored)
-        if (providerDto.getServices() != null) {
-            List<Long> serviceIds = providerDto.getServices().stream()
-                    .map(ProviderDto.ServiceRef::getId)
-                    .filter(Objects::nonNull)
-                    .toList();
-            List<Service> oldServices = provider.getServices();
-            for (Service oldService : oldServices) {
-                oldService.getProviders().remove(provider);
-                serviceRepository.save(oldService);
-            }
-            List<Service> newServices = serviceRepository.findAllById(serviceIds);
-            for (Service newService : newServices) {
-                newService.getProviders().add(provider);
-                serviceRepository.save(newService);
-            }
-            provider.setServices(newServices);
-        }
-
-        // Update links
-        if (providerDto.getLinks() != null) {
-            for (Links l : providerDto.getLinks()) {
-                Links link = l.getId() != null
-                        ? linksRepository.findById(l.getId()).orElseGet(Links::new)
-                        : new Links();
-                if (l.getLink() != null) link.setLink(l.getLink());
-                link.setProvider(provider);
-                linksRepository.save(link);
-            }
-        }
-
-        // Update offers
-        if (providerDto.getOffers() != null) {
-            for (Offer o : providerDto.getOffers()) {
-                Offer offer = o.getId() != null
-                        ? offerRepository.findById(o.getId()).orElseGet(Offer::new)
-                        : new Offer();
-                if (o.getTitle() != null) offer.setTitle(o.getTitle());
-                if (o.getDescription() != null) offer.setDescription(o.getDescription());
-                if (o.getEndDate() != null) offer.setEndDate(o.getEndDate());
-                offer.setProvider(provider);
-                offerRepository.save(offer);
-            }
-        }
-
-        provider = providerRepository.save(provider);
-        return Response.response(provider, "provider updated successfully", ResponseType.SUCCESS);
-    }
-
-    @Override
-    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
-        Optional<Provider> providerOptional = providerRepository.findById(id);
-        if (providerOptional.isPresent()) {
-            providerRepository.deleteById(id);
-            return Response.response(true, "provider deleted successfully", ResponseType.SUCCESS);
-        } else {
-            return Response.response(false, "there is no provider with this id : " + id, ResponseType.NOT_FOUND);
-        }
+                .orElseGet(() -> Response.response(null, "there is no provider with this id : " + id, ResponseType.NOT_FOUND));
     }
 
     @Override
@@ -189,11 +67,8 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
 
     @GetMapping("/me")
     public ResponseEntity<Response<Provider>> getMyProviderProfile(Authentication authentication) {
-        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        if (userOptional.isEmpty()) {
-            return Response.response(null, "User not found", ResponseType.NOT_FOUND);
-        }
-        return providerRepository.findByUserId(userOptional.get().getId())
+        User user = currentUserService.user(authentication);
+        return providerRepository.findByUserId(user.getId())
                 .map(provider -> Response.response(provider, "Done", ResponseType.SUCCESS))
                 .orElseGet(() -> Response.response(null, "No provider found for this user", ResponseType.NOT_FOUND));
     }
@@ -210,248 +85,323 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
         return Response.response(providers, "Providers filtered by services", ResponseType.SUCCESS);
     }
 
-    public ResponseEntity<Response<Provider>> getProviderByUserId(Long userId) {
-        Optional<Provider> providerOptional = providerRepository.findByUserId(userId);
-        if (providerOptional.isPresent()) {
-            return Response.response(providerOptional.get(), "Provider found", ResponseType.SUCCESS);
-        } else {
-            return Response.response(null, "No provider found for user id: " + userId, ResponseType.NOT_FOUND);
-        }
+    /** Followers contain user contact details, so only the provider and admins can list them. */
+    @GetMapping("/{id}/followers")
+    public ResponseEntity<Response<List<Follower>>> getFollowers(Authentication authentication, @PathVariable Long id) {
+        User caller = currentUserService.user(authentication);
+        Provider provider = providerRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound("No provider found with id: " + id));
+        currentUserService.requireProviderOwnerOrAdmin(caller, provider);
+        return Response.response(followersRepository.findByProviderId(id), "Followers list", ResponseType.SUCCESS);
     }
 
-    @PostMapping("/update-services")
-    public ResponseEntity<Response<Provider>> storeServicesForProvider(@RequestBody ServicesProviderDto servicesProviderDto) {
-        Optional<Provider> providerOptional = providerRepository.findById(servicesProviderDto.getProviderId());
-        if (providerOptional.isPresent()) {
-            Provider provider = providerOptional.get();
-            // Step 1: Remove current provider from old services
-            List<Service> oldServices = provider.getServices();
-            for (Service oldService : oldServices) {
-                oldService.getProviders().remove(provider);
-                serviceRepository.save(oldService);
-            }
-            // Step 2: Fetch new services
-            List<Service> newServices = serviceRepository.findAllById(servicesProviderDto.getServiceIds());
-            // Step 3: Add provider to new services
-            for (Service newService : newServices) {
-                newService.getProviders().add(provider);
-                serviceRepository.save(newService);
-            }
-            // Step 4: Update provider's service list
-            provider.setServices(newServices);
-            provider = providerRepository.save(provider);
-            return Response.response(provider, "Services updated successfully", ResponseType.SUCCESS);
-        } else {
-            return Response.response(null, "No provider found with id: " + servicesProviderDto.getProviderId(), ResponseType.NOT_FOUND);
+    // ---------------------------------------------------------------- admin: create / delete / status
+
+    /** Admin only. Prefer /providers/create-by-admin, which also creates the account. */
+    @Override
+    @Transactional
+    public ResponseEntity<Response<Provider>> insert(Authentication authentication, @RequestBody ProviderDto dto) {
+        currentUserService.admin(authentication);
+        if (dto.getUserId() == null) {
+            throw ApiException.badRequest("userId is required");
         }
-    }
-
-    @PostMapping("/follow-provider/{id}")
-    public ResponseEntity<Response<Follower>> follow(Authentication authentication, @PathVariable Long id) {
-        Optional<Provider> providerOptional = providerRepository.findById(id);
-        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        if (userOptional.isPresent()) {
-            if (providerOptional.isPresent()) {
-                Provider provider = providerOptional.get();
-                Long count = provider.getFollowersCount();
-                count = count + 1;
-                provider.setFollowersCount(count);
-                Follower follower = new Follower();
-                FollowerId followerId = new FollowerId(userOptional.get().getId(), id);
-                follower.setId(followerId);
-                follower.setProvider(provider);
-                follower.setUser(userOptional.get());
-                follower = followersRepository.save(follower);
-                provider = providerRepository.save(provider);
-                return Response.response(follower, "Done", ResponseType.SUCCESS);
-            } else {
-                return Response.response(null, "provider id not exist", ResponseType.SUCCESS);
-            }
-        } else {
-            return Response.response(null, "user id not exist", ResponseType.SUCCESS);
+        User user = userRepository.findById(dto.getUserId())
+                .orElseThrow(() -> ApiException.notFound("there is no user with this id : " + dto.getUserId()));
+        if (providerRepository.findByUserId(user.getId()).isPresent()) {
+            throw ApiException.conflict("This user is already a provider");
         }
-    }
-
-    @PostMapping("/update-all/{id}")
-    public ResponseEntity<Response<Provider>> updateAll(@PathVariable Long id, @RequestBody UpdateProviderDto dto) {
-        Optional<Provider> providerOptional = providerRepository.findById(id);
-        if (providerOptional.isEmpty()) {
-            return Response.response(null, "No provider found with id: " + id, ResponseType.NOT_FOUND);
-        }
-
-        Provider provider = providerOptional.get();
-
-        // Update user basic info
-        User user = provider.getUser();
-        if (dto.getFirstName() != null) user.setFirstName(dto.getFirstName());
-        if (dto.getLastName() != null) user.setLastName(dto.getLastName());
-        if (dto.getPhone() != null) user.setPhone(dto.getPhone());
-        if (dto.getEmail() != null) user.setEmail(dto.getEmail());
+        Provider provider = new Provider();
+        provider.setUser(user);
+        provider.setName(((user.getFirstName() == null ? "" : user.getFirstName()) + " "
+                + (user.getLastName() == null ? "" : user.getLastName())).trim());
+        provider.setFollowersCount(0L);
+        provider.setRate(0.0);
+        provider = providerRepository.save(provider);
+        user.setRole(Role.PROVIDER);
         userRepository.save(user);
+        return Response.response(provider, "provider saved successfully", ResponseType.SUCCESS);
+    }
 
-        // Update services
-        if (dto.getServiceIds() != null) {
-            List<Service> oldServices = provider.getServices();
-            for (Service s : oldServices) {
-                s.getProviders().remove(provider);
-                serviceRepository.save(s);
+    @Override
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
+        currentUserService.admin(authentication);
+        if (!providerRepository.existsById(id)) {
+            return Response.response(false, "there is no provider with this id : " + id, ResponseType.NOT_FOUND);
+        }
+        providerRepository.deleteById(id);
+        return Response.response(true, "provider deleted successfully", ResponseType.SUCCESS);
+    }
+
+    /** Admin only: suspend (false) or reactivate (true) a provider. Suspended providers receive no new orders. */
+    @PostMapping("/set-active/{id}/{active}")
+    public ResponseEntity<Response<Provider>> setActive(Authentication authentication, @PathVariable Long id, @PathVariable boolean active) {
+        currentUserService.admin(authentication);
+        Provider provider = providerRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound("No provider found with id: " + id));
+        provider.setActive(active);
+        return Response.response(providerRepository.save(provider), active ? "Provider activated" : "Provider suspended", ResponseType.SUCCESS);
+    }
+
+    /** The provider turns new orders on or off for themselves. Body: {"acceptingOrders": true}. */
+    @PostMapping("/availability")
+    public ResponseEntity<Response<Provider>> setAvailability(Authentication authentication, @RequestBody Map<String, Boolean> body) {
+        Provider provider = currentUserService.provider(authentication);
+        Boolean accepting = body == null ? null : body.get("acceptingOrders");
+        if (accepting == null) {
+            throw ApiException.badRequest("acceptingOrders is required");
+        }
+        provider.setAcceptingOrders(accepting);
+        return Response.response(providerRepository.save(provider), "Availability updated", ResponseType.SUCCESS);
+    }
+
+    // ---------------------------------------------------------------- update
+
+    /**
+     * The provider (or an admin) can edit branches, services, links and offers.
+     * Rate, followers count and the owning user can only be changed by an admin.
+     */
+    @Override
+    @Transactional
+    public ResponseEntity<Response<Provider>> update(Authentication authentication, @RequestBody ProviderDto dto) {
+        User caller = currentUserService.user(authentication);
+        if (dto.getId() == null) {
+            throw ApiException.badRequest("provider id is required");
+        }
+        Provider provider = providerRepository.findById(dto.getId())
+                .orElseThrow(() -> ApiException.notFound("there is no provider with this id : " + dto.getId()));
+        currentUserService.requireProviderOwnerOrAdmin(caller, provider);
+        boolean admin = currentUserService.isAdmin(caller);
+
+        if (admin) {
+            if (dto.getUserId() != null) {
+                User owner = userRepository.findById(dto.getUserId())
+                        .orElseThrow(() -> ApiException.notFound("there is no user with this id : " + dto.getUserId()));
+                provider.setUser(owner);
             }
-            List<Service> newServices = serviceRepository.findAllById(dto.getServiceIds());
-            for (Service s : newServices) {
-                s.getProviders().add(provider);
-                serviceRepository.save(s);
-            }
-            provider.setServices(newServices);
+            if (dto.getRate() != null) provider.setRate(dto.getRate());
+            if (dto.getFollowersCount() != null) provider.setFollowersCount(dto.getFollowersCount());
         }
 
-        // Update branches and their work times
         if (dto.getBranches() != null) {
-            for (UpdateProviderDto.Branch b : dto.getBranches()) {
-                Branch branch;
-                if (b.getId() > 0) {
-                    branch = branchRepository.findById((long) b.getId()).orElse(new Branch());
-                } else {
-                    branch = new Branch();
+            for (Branch b : dto.getBranches()) {
+                Branch branch = ownedBranchOrNew(b.getId(), provider);
+                if (branch.getId() == null && (b.getName() == null || b.getName().trim().isEmpty())) {
+                    throw ApiException.badRequest("branch name is required");
                 }
                 if (b.getName() != null) branch.setName(b.getName());
                 if (b.getAddress() != null) branch.setAddress(b.getAddress());
                 branch.setProvider(provider);
                 branch = branchRepository.save(branch);
                 if (b.getWorkTimes() != null) {
-                    final Branch savedBranch = branch;
-                    for (UpdateProviderDto.WorkTime wt : b.getWorkTimes()) {
-                        if (wt.getId() > 0) {
-                            workTimeRepository.findById((long) wt.getId()).ifPresent(workTime -> {
-                                workTime.setDay(wt.getDay());
-                                workTime.setStartTime(wt.getStartTime());
-                                workTime.setCloseTime(wt.getCloseTime());
-                                workTimeRepository.save(workTime);
-                            });
-                        } else {
-                            WorkTime workTime = workTimeRepository
-                                    .findByBranchIdAndDay(savedBranch.getId(), wt.getDay())
-                                    .orElse(new WorkTime());
-                            workTime.setDay(wt.getDay());
-                            workTime.setStartTime(wt.getStartTime());
-                            workTime.setCloseTime(wt.getCloseTime());
-                            workTime.setBranch(savedBranch);
-                            workTimeRepository.save(workTime);
-                        }
+                    for (WorkTime wt : b.getWorkTimes()) {
+                        WorkTime workTime = wt.getId() != null
+                                ? ownedWorkTimeOrNew(wt.getId(), provider)
+                                : workTimeRepository.findByBranchIdAndDay(branch.getId(), wt.getDay()).orElseGet(WorkTime::new);
+                        if (wt.getDay() != null) workTime.setDay(wt.getDay());
+                        if (wt.getStartTime() != null) workTime.setStartTime(wt.getStartTime());
+                        if (wt.getCloseTime() != null) workTime.setCloseTime(wt.getCloseTime());
+                        workTime.setBranch(branch);
+                        workTimeRepository.save(workTime);
                     }
                 }
             }
         }
 
-        // Update links
+        if (dto.getServices() != null) {
+            List<Long> serviceIds = dto.getServices().stream()
+                    .map(ProviderDto.ServiceRef::getId)
+                    .filter(Objects::nonNull)
+                    .toList();
+            replaceServices(provider, serviceIds);
+        }
+
+        if (dto.getLinks() != null) {
+            for (Links l : dto.getLinks()) {
+                Links link = l.getId() != null ? ownedLinkOrNew(l.getId(), provider) : new Links();
+                if (l.getLink() != null) link.setLink(l.getLink());
+                link.setProvider(provider);
+                linksRepository.save(link);
+            }
+        }
+
+        if (dto.getOffers() != null) {
+            for (Offer o : dto.getOffers()) {
+                Offer offer = o.getId() != null ? ownedOfferOrNew(o.getId(), provider) : new Offer();
+                if (o.getTitle() != null) offer.setTitle(o.getTitle());
+                if (o.getDescription() != null) offer.setDescription(o.getDescription());
+                if (o.getEndDate() != null) offer.setEndDate(o.getEndDate());
+                offer.setProvider(provider);
+                offerRepository.save(offer);
+            }
+        }
+        provider = providerRepository.save(provider);
+        return Response.response(provider, "provider updated successfully", ResponseType.SUCCESS);
+    }
+
+    @PostMapping("/update-services")
+    @Transactional
+    public ResponseEntity<Response<Provider>> storeServicesForProvider(Authentication authentication, @RequestBody ServicesProviderDto dto) {
+        User caller = currentUserService.user(authentication);
+        if (dto.getProviderId() == null) {
+            throw ApiException.badRequest("providerId is required");
+        }
+        Provider provider = providerRepository.findById(dto.getProviderId())
+                .orElseThrow(() -> ApiException.notFound("No provider found with id: " + dto.getProviderId()));
+        currentUserService.requireProviderOwnerOrAdmin(caller, provider);
+        replaceServices(provider, dto.getServiceIds() == null ? List.of() : dto.getServiceIds());
+        provider = providerRepository.save(provider);
+        return Response.response(provider, "Services updated successfully", ResponseType.SUCCESS);
+    }
+
+    @PostMapping("/update-all/{id}")
+    @Transactional
+    public ResponseEntity<Response<Provider>> updateAll(Authentication authentication, @PathVariable Long id, @RequestBody UpdateProviderDto dto) {
+        User caller = currentUserService.user(authentication);
+        Provider provider = providerRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound("No provider found with id: " + id));
+        currentUserService.requireProviderOwnerOrAdmin(caller, provider);
+
+        User user = provider.getUser();
+        if (dto.getFirstName() != null) user.setFirstName(dto.getFirstName());
+        if (dto.getLastName() != null) user.setLastName(dto.getLastName());
+        if (dto.getPhone() != null) user.setPhone(dto.getPhone());
+        if (dto.getEmail() != null && !dto.getEmail().equals(user.getEmail())) {
+            if (dto.getEmail().trim().isEmpty()) {
+                throw ApiException.badRequest("email must not be blank");
+            }
+            if (userRepository.findByEmail(dto.getEmail().trim()).isPresent()) {
+                throw ApiException.conflict("User already exists with this email = " + dto.getEmail());
+            }
+            user.setEmail(dto.getEmail().trim());
+        }
+        userRepository.save(user);
+
+        if (dto.getServiceIds() != null) {
+            replaceServices(provider, dto.getServiceIds());
+        }
+
+        if (dto.getBranches() != null) {
+            for (UpdateProviderDto.Branch b : dto.getBranches()) {
+                Branch branch = b.getId() > 0 ? ownedBranchOrNew((long) b.getId(), provider) : new Branch();
+                if (b.getName() != null) branch.setName(b.getName());
+                if (b.getAddress() != null) branch.setAddress(b.getAddress());
+                branch.setProvider(provider);
+                branch = branchRepository.save(branch);
+                if (b.getWorkTimes() != null) {
+                    for (UpdateProviderDto.WorkTime wt : b.getWorkTimes()) {
+                        WorkTime workTime;
+                        if (wt.getId() > 0) {
+                            workTime = ownedWorkTimeOrNew((long) wt.getId(), provider);
+                        } else {
+                            workTime = workTimeRepository.findByBranchIdAndDay(branch.getId(), wt.getDay()).orElseGet(WorkTime::new);
+                        }
+                        workTime.setDay(wt.getDay());
+                        workTime.setStartTime(wt.getStartTime());
+                        workTime.setCloseTime(wt.getCloseTime());
+                        workTime.setBranch(branch);
+                        workTimeRepository.save(workTime);
+                    }
+                }
+            }
+        }
+
         if (dto.getLinks() != null) {
             for (UpdateProviderDto.Link l : dto.getLinks()) {
-                if (l.getId() > 0) {
-                    linksRepository.findById((long) l.getId()).ifPresent(link -> {
-                        link.setLink(l.getLink());
-                        linksRepository.save(link);
-                    });
-                } else {
-                    Links newLink = new Links();
-                    newLink.setLink(l.getLink());
-                    newLink.setProvider(provider);
-                    linksRepository.save(newLink);
-                }
+                Links link = l.getId() > 0 ? ownedLinkOrNew((long) l.getId(), provider) : new Links();
+                link.setLink(l.getLink());
+                link.setProvider(provider);
+                linksRepository.save(link);
             }
         }
 
-        // Update offers
         if (dto.getOffers() != null) {
             for (UpdateProviderDto.Offer o : dto.getOffers()) {
-                if (o.getId() > 0) {
-                    offerRepository.findById((long) o.getId()).ifPresent(offer -> {
-                        offer.setTitle(o.getTitle());
-                        offer.setDescription(o.getDescription());
-                        if (o.getEndDate() != null) offer.setEndDate(LocalDate.parse(o.getEndDate()));
-                        offerRepository.save(offer);
-                    });
-                } else {
-                    Offer newOffer = new Offer();
-                    newOffer.setTitle(o.getTitle());
-                    newOffer.setDescription(o.getDescription());
-                    if (o.getEndDate() != null) newOffer.setEndDate(LocalDate.parse(o.getEndDate()));
-                    newOffer.setProvider(provider);
-                    offerRepository.save(newOffer);
-                }
+                Offer offer = o.getId() > 0 ? ownedOfferOrNew((long) o.getId(), provider) : new Offer();
+                offer.setTitle(o.getTitle());
+                offer.setDescription(o.getDescription());
+                if (o.getEndDate() != null) offer.setEndDate(LocalDate.parse(o.getEndDate()));
+                offer.setProvider(provider);
+                offerRepository.save(offer);
             }
         }
-
         provider = providerRepository.save(provider);
         return Response.response(provider, "Provider updated successfully", ResponseType.SUCCESS);
     }
 
-    @GetMapping("/{id}/followers")
-    public ResponseEntity<Response<List<Follower>>> getFollowers(@PathVariable Long id) {
-        if (!providerRepository.existsById(id)) {
-            return Response.response(null, "No provider found with id: " + id, ResponseType.NOT_FOUND);
+    // ---------------------------------------------------------------- follow
+
+    @PostMapping("/follow-provider/{id}")
+    @Transactional
+    public ResponseEntity<Response<Follower>> follow(Authentication authentication, @PathVariable Long id) {
+        User user = currentUserService.user(authentication);
+        Provider provider = providerRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound("provider id not exist"));
+        FollowerId followerId = new FollowerId(user.getId(), id);
+        if (followersRepository.existsById(followerId)) {
+            throw ApiException.conflict("you are already following this provider");
         }
-        List<Follower> followers = followersRepository.findByProviderId(id);
-        return Response.response(followers, "Followers list", ResponseType.SUCCESS);
+        Follower follower = new Follower();
+        follower.setId(followerId);
+        follower.setProvider(provider);
+        follower.setUser(user);
+        follower = followersRepository.save(follower);
+        provider.setFollowersCount(provider.getFollowersCount() + 1);
+        providerRepository.save(provider);
+        return Response.response(follower, "Done", ResponseType.SUCCESS);
     }
 
     @DeleteMapping("/unfollow-provider/{id}")
+    @Transactional
     public ResponseEntity<Response<Boolean>> unfollow(Authentication authentication, @PathVariable Long id) {
-        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        Optional<Provider> providerOptional = providerRepository.findById(id);
-        if (userOptional.isEmpty()) {
-            return Response.response(false, "user not found", ResponseType.NOT_FOUND);
-        }
-        if (providerOptional.isEmpty()) {
-            return Response.response(false, "provider id not exist", ResponseType.NOT_FOUND);
-        }
-        FollowerId followerId = new FollowerId(userOptional.get().getId(), id);
+        User user = currentUserService.user(authentication);
+        Provider provider = providerRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound("provider id not exist"));
+        FollowerId followerId = new FollowerId(user.getId(), id);
         if (!followersRepository.existsById(followerId)) {
-            return Response.response(false, "you are not following this provider", ResponseType.NOT_FOUND);
+            throw ApiException.notFound("you are not following this provider");
         }
         followersRepository.deleteById(followerId);
-        Provider provider = providerOptional.get();
         long count = provider.getFollowersCount();
         provider.setFollowersCount(count > 0 ? count - 1 : 0);
         providerRepository.save(provider);
         return Response.response(true, "unfollowed successfully", ResponseType.SUCCESS);
     }
 
-    @PostMapping("/create-by-admin")
-    public ResponseEntity<Response<Provider>> createByAdmin(Authentication authentication, @RequestBody CreateProviderDto dto) {
-        Optional<User> adminOptional = userRepository.findByEmail(authentication.getName());
-        if (adminOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
-        }
-        if (adminOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
-        }
+    // ---------------------------------------------------------------- admin: create provider with account
 
+    @PostMapping("/create-by-admin")
+    @Transactional
+    public ResponseEntity<Response<Provider>> createByAdmin(Authentication authentication, @RequestBody CreateProviderDto dto) {
+        currentUserService.admin(authentication);
         if (dto.getEmail() == null || dto.getEmail().trim().isEmpty()) {
-            return Response.response(null, "email is required", ResponseType.ERROR);
+            throw ApiException.badRequest("email is required");
         }
-        if (dto.getPassword() == null || dto.getPassword().trim().isEmpty()) {
-            return Response.response(null, "password is required", ResponseType.ERROR);
+        if (dto.getPassword() == null || dto.getPassword().length() < 6) {
+            throw ApiException.badRequest("Password must be at least 6 characters");
         }
         if (dto.getProviderName() == null || dto.getProviderName().trim().isEmpty()) {
-            return Response.response(null, "providerName is required", ResponseType.ERROR);
+            throw ApiException.badRequest("providerName is required");
         }
-        if (userRepository.findByEmail(dto.getEmail()).isPresent()) {
-            return Response.response(null, "User already exists with this email = " + dto.getEmail(), ResponseType.ERROR);
+        if (userRepository.findByEmail(dto.getEmail().trim()).isPresent()) {
+            throw ApiException.conflict("User already exists with this email = " + dto.getEmail());
         }
-
         City city = null;
         if (dto.getCityId() != null) {
-            Optional<City> cityOptional = cityRepository.findById(dto.getCityId());
-            if (cityOptional.isEmpty()) {
-                return Response.response(null, "this city id not exist with id = " + dto.getCityId(), ResponseType.ERROR);
+            city = cityRepository.findById(dto.getCityId())
+                    .orElseThrow(() -> ApiException.badRequest("this city id not exist with id = " + dto.getCityId()));
+        }
+        if (dto.getBranches() != null) {
+            for (CreateProviderDto.Branch b : dto.getBranches()) {
+                if (b.getName() == null || b.getName().trim().isEmpty()) {
+                    throw ApiException.badRequest("branch name is required");
+                }
             }
-            city = cityOptional.get();
         }
 
-        // 1) Create the user account
         User user = new User();
         user.setFirstName(dto.getFirstName());
         user.setLastName(dto.getLastName());
-        user.setEmail(dto.getEmail());
+        user.setEmail(dto.getEmail().trim());
         user.setPhone(dto.getPhone());
         user.setCity(city);
         user.setImage("download.jpeg");
@@ -459,23 +409,16 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
         user.setRole(Role.PROVIDER);
         user.setPassword(passwordEncoder.encode(dto.getPassword()));
         user = userRepository.save(user);
-        user.setToken(jwtUtil.generateToken(user.getEmail(), user.getId()));
-        user = userRepository.save(user);
 
-        // 2) Create the provider linked to that user
         Provider provider = new Provider();
         provider.setUser(user);
-        provider.setName(dto.getProviderName());
+        provider.setName(dto.getProviderName().trim());
         provider.setFollowersCount(0L);
         provider.setRate(dto.getRate() != null ? dto.getRate() : 0.0);
         provider = providerRepository.save(provider);
 
-        // 3) Branches and their work times
         if (dto.getBranches() != null) {
             for (CreateProviderDto.Branch b : dto.getBranches()) {
-                if (b.getName() == null || b.getName().trim().isEmpty()) {
-                    return Response.response(null, "branch name is required", ResponseType.ERROR);
-                }
                 Branch branch = new Branch();
                 branch.setName(b.getName());
                 branch.setAddress(b.getAddress());
@@ -494,17 +437,10 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
             }
         }
 
-        // 4) Services
         if (dto.getServiceIds() != null && !dto.getServiceIds().isEmpty()) {
-            List<Service> services = serviceRepository.findAllById(dto.getServiceIds());
-            for (Service service : services) {
-                service.getProviders().add(provider);
-                serviceRepository.save(service);
-            }
-            provider.setServices(services);
+            replaceServices(provider, dto.getServiceIds());
         }
 
-        // 5) Links
         if (dto.getLinks() != null) {
             for (CreateProviderDto.Link l : dto.getLinks()) {
                 Links link = new Links();
@@ -514,7 +450,6 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
             }
         }
 
-        // 6) Offers
         if (dto.getOffers() != null) {
             for (CreateProviderDto.Offer o : dto.getOffers()) {
                 Offer offer = new Offer();
@@ -525,8 +460,66 @@ public class ProviderController extends Controller<Provider, ProviderDto, Long> 
                 offerRepository.save(offer);
             }
         }
-
         provider = providerRepository.save(provider);
         return Response.response(provider, "provider created successfully", ResponseType.SUCCESS);
+    }
+
+    // ---------------------------------------------------------------- helpers
+
+    /** Replaces the services a provider offers (Service owns the join table). */
+    private void replaceServices(Provider provider, List<Long> serviceIds) {
+        List<Long> distinct = serviceIds.stream().filter(Objects::nonNull).distinct().toList();
+        List<Service> newServices = serviceRepository.findAllById(distinct);
+        if (newServices.size() != distinct.size()) {
+            throw ApiException.badRequest("One or more service ids do not exist");
+        }
+        List<Service> oldServices = provider.getServices() == null ? List.of() : new ArrayList<>(provider.getServices());
+        for (Service oldService : oldServices) {
+            oldService.getProviders().remove(provider);
+            serviceRepository.save(oldService);
+        }
+        for (Service newService : newServices) {
+            newService.getProviders().add(provider);
+            serviceRepository.save(newService);
+        }
+        provider.setServices(newServices);
+    }
+
+    private Branch ownedBranchOrNew(Long id, Provider provider) {
+        if (id == null) return new Branch();
+        Optional<Branch> existing = branchRepository.findById(id);
+        if (existing.isEmpty()) return new Branch();
+        if (existing.get().getProvider() == null || !existing.get().getProvider().getId().equals(provider.getId())) {
+            throw ApiException.forbidden("Branch " + id + " does not belong to this provider");
+        }
+        return existing.get();
+    }
+
+    private WorkTime ownedWorkTimeOrNew(Long id, Provider provider) {
+        Optional<WorkTime> existing = workTimeRepository.findById(id);
+        if (existing.isEmpty()) return new WorkTime();
+        Branch branch = existing.get().getBranch();
+        if (branch == null || branch.getProvider() == null || !branch.getProvider().getId().equals(provider.getId())) {
+            throw ApiException.forbidden("Work time " + id + " does not belong to this provider");
+        }
+        return existing.get();
+    }
+
+    private Links ownedLinkOrNew(Long id, Provider provider) {
+        Optional<Links> existing = linksRepository.findById(id);
+        if (existing.isEmpty()) return new Links();
+        if (existing.get().getProvider() == null || !existing.get().getProvider().getId().equals(provider.getId())) {
+            throw ApiException.forbidden("Link " + id + " does not belong to this provider");
+        }
+        return existing.get();
+    }
+
+    private Offer ownedOfferOrNew(Long id, Provider provider) {
+        Optional<Offer> existing = offerRepository.findById(id);
+        if (existing.isEmpty()) return new Offer();
+        if (existing.get().getProvider() == null || !existing.get().getProvider().getId().equals(provider.getId())) {
+            throw ApiException.forbidden("Offer " + id + " does not belong to this provider");
+        }
+        return existing.get();
     }
 }

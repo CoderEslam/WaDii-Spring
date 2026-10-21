@@ -26,11 +26,16 @@ public class SavedOfferController extends Controller<SavedOffer, SavedOfferDto, 
     private final UserRepository userRepository;
     private final OfferRepository offerRepository;
     private final SavedOfferRepository savedOfferRepository;
+    private final com.doubleclick.wadii.auth.service.CurrentUserService currentUserService;
 
     @Override
     public ResponseEntity<Response<SavedOffer>> show(Long id) {
+        User caller = currentUserService.user();
         return savedOfferRepository.findById(id)
-                .map(savedOffer -> Response.response(savedOffer, "Done", ResponseType.SUCCESS))
+                .map(savedOffer -> {
+                    currentUserService.requireSelfOrAdmin(caller, savedOffer.getUser().getId());
+                    return Response.response(savedOffer, "Done", ResponseType.SUCCESS);
+                })
                 .orElseGet(() -> Response.response(null, "No saved offer found with id: " + id, ResponseType.NOT_FOUND));
     }
 
@@ -61,15 +66,19 @@ public class SavedOfferController extends Controller<SavedOffer, SavedOfferDto, 
 
     @Override
     public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
-        if (!savedOfferRepository.existsById(id)) {
+        User caller = currentUserService.user(authentication);
+        SavedOffer savedOffer = savedOfferRepository.findById(id).orElse(null);
+        if (savedOffer == null) {
             return Response.response(false, "No saved offer found with id: " + id, ResponseType.NOT_FOUND);
         }
+        currentUserService.requireSelfOrAdmin(caller, savedOffer.getUser().getId());
         savedOfferRepository.deleteById(id);
         return Response.response(true, "Saved offer removed successfully", ResponseType.SUCCESS);
     }
 
     @Override
     public ResponseEntity<Response<List<SavedOffer>>> readAll() {
+        currentUserService.admin();
         return Response.response(savedOfferRepository.findAll(), "All saved offers", ResponseType.SUCCESS);
     }
 

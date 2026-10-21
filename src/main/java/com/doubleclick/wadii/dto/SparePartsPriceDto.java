@@ -5,6 +5,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+
 @Setter
 @Getter
 @AllArgsConstructor
@@ -12,5 +14,5 @@ import lombok.Setter;
 public class SparePartsPriceDto {
 
     private Long id;
-    private Double price;
+    private BigDecimal price;
 }

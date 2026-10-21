@@ -21,6 +21,7 @@ import java.util.Optional;
 public class ReasonController extends Controller<Reason, ReasonDto, Long> {
 
     private final ReasonRepository reasonRepository;
+    private final com.doubleclick.wadii.auth.service.CurrentUserService currentUserService;
 
     @Override
     public ResponseEntity<Response<Reason>> show(Long id) {
@@ -31,6 +32,7 @@ public class ReasonController extends Controller<Reason, ReasonDto, Long> {
 
     @Override
     public ResponseEntity<Response<Reason>> insert(Authentication authentication, ReasonDto reasonDto) {
+        currentUserService.admin(authentication);
         if (reasonDto.getReason() == null || reasonDto.getReason().trim().isEmpty()) {
             return Response.response(null, "reason is required", ResponseType.ERROR);
         }
@@ -42,6 +44,7 @@ public class ReasonController extends Controller<Reason, ReasonDto, Long> {
 
     @Override
     public ResponseEntity<Response<Reason>> update(Authentication authentication, ReasonDto reasonDto) {
+        currentUserService.admin(authentication);
         if (reasonDto.getId() == null) {
             return Response.response(null, "reason id is required", ResponseType.ERROR);
         }
@@ -59,6 +62,7 @@ public class ReasonController extends Controller<Reason, ReasonDto, Long> {
 
     @Override
     public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
+        currentUserService.admin(authentication);
         if (!reasonRepository.existsById(id)) {
             return Response.response(false, "there is no reason with this id : " + id, ResponseType.NOT_FOUND);
         }

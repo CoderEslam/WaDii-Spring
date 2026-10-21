@@ -1,22 +1,24 @@
 package com.doubleclick.wadii.controller;
 
-import com.doubleclick.wadii.auth.model.User;
-import com.doubleclick.wadii.auth.repository.UserRepository;
+import com.doubleclick.wadii.auth.service.CurrentUserService;
 import com.doubleclick.wadii.dto.BranchDto;
 import com.doubleclick.wadii.entities.Branch;
-import com.doubleclick.wadii.entities.Role;
+import com.doubleclick.wadii.entities.Provider;
+import com.doubleclick.wadii.exception.ApiException;
 import com.doubleclick.wadii.repository.BranchRepository;
-import com.doubleclick.wadii.repository.ProviderRepository;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
 import com.doubleclick.wadii.utils.ResponseType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.Optional;
 
 @RequiredArgsConstructor
 @RestController
@@ -24,8 +26,7 @@ import java.util.Optional;
 public class BranchController extends Controller<Branch, BranchDto, Long> {
 
     private final BranchRepository branchRepository;
-    private final ProviderRepository providerRepository;
-    private final UserRepository userRepository;
+    private final CurrentUserService currentUserService;
 
     @Override
     public ResponseEntity<Response<Branch>> show(Long id) {
@@ -34,78 +35,44 @@ public class BranchController extends Controller<Branch, BranchDto, Long> {
                 .orElseGet(() -> Response.response(null, "there is no branch with this id : " + id, ResponseType.NOT_FOUND));
     }
 
+    /** The branch is created for the authenticated provider; providerId in the body is ignored. */
     @Override
-    public ResponseEntity<Response<Branch>> insert(Authentication authentication, @RequestBody BranchDto branchDto) {
-        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+    public ResponseEntity<Response<Branch>> insert(Authentication authentication, @RequestBody BranchDto dto) {
+        Provider provider = currentUserService.provider(authentication);
+        if (dto.getName() == null || dto.getName().trim().isEmpty()) {
+            throw ApiException.badRequest("branch name is required");
         }
-        if (userOptional.get().getRole() != Role.PROVIDER) {
-            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
-        }
-        if (branchDto.getName() == null || branchDto.getName().trim().isEmpty()) {
-            return Response.response(null, "branch name is required", ResponseType.ERROR);
-        }
-        return providerRepository.findById(branchDto.getProviderId())
-                .map(provider -> {
-                    Branch branch = new Branch();
-                    branch.setName(branchDto.getName());
-                    branch.setAddress(branchDto.getAddress());
-                    branch.setProvider(provider);
-                    Branch saved = branchRepository.save(branch);
-                    return Response.response(saved, "branch saved successfully", ResponseType.SUCCESS);
-                })
-                .orElseGet(() -> Response.response(null, "there is no provider with this id : " + branchDto.getProviderId(), ResponseType.NOT_FOUND));
+        Branch branch = new Branch();
+        branch.setName(dto.getName());
+        branch.setAddress(dto.getAddress());
+        branch.setProvider(provider);
+        return Response.response(branchRepository.save(branch), "branch saved successfully", ResponseType.SUCCESS);
     }
 
     @Override
-    public ResponseEntity<Response<Branch>> update(Authentication authentication, @RequestBody BranchDto branchDto) {
-        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+    public ResponseEntity<Response<Branch>> update(Authentication authentication, @RequestBody BranchDto dto) {
+        Provider provider = currentUserService.provider(authentication);
+        if (dto.getId() == null) {
+            throw ApiException.badRequest("branch id is required");
         }
-        if (userOptional.get().getRole() != Role.PROVIDER) {
-            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
-        }
-        if (branchDto.getId() == null) {
-            return Response.response(null, "branch id is required", ResponseType.ERROR);
-        }
-        Optional<Branch> branchOptional = branchRepository.findById(branchDto.getId());
-        if (branchOptional.isEmpty()) {
-            return Response.response(null, "there is no branch with this id : " + branchDto.getId(), ResponseType.NOT_FOUND);
-        }
-        Branch branch = branchOptional.get();
-        if (branchDto.getName() != null) branch.setName(branchDto.getName());
-        if (branchDto.getAddress() != null) branch.setAddress(branchDto.getAddress());
-        if (branchDto.getProviderId() != null) {
-            return providerRepository.findById(branchDto.getProviderId())
-                    .map(provider -> {
-                        branch.setProvider(provider);
-                        Branch saved = branchRepository.save(branch);
-                        return Response.response(saved, "branch updated successfully", ResponseType.SUCCESS);
-                    })
-                    .orElseGet(() -> Response.response(null, "there is no provider with this id : " + branchDto.getProviderId(), ResponseType.NOT_FOUND));
-        }
-        Branch saved = branchRepository.save(branch);
-        return Response.response(saved, "branch updated successfully", ResponseType.SUCCESS);
+        Branch branch = branchRepository.findById(dto.getId())
+                .orElseThrow(() -> ApiException.notFound("there is no branch with this id : " + dto.getId()));
+        requireOwner(branch, provider);
+        if (dto.getName() != null) branch.setName(dto.getName());
+        if (dto.getAddress() != null) branch.setAddress(dto.getAddress());
+        return Response.response(branchRepository.save(branch), "branch updated successfully", ResponseType.SUCCESS);
     }
 
     @Override
     public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
-        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        if (userOptional.isEmpty()) {
-            return Response.response(false, "User not exist", ResponseType.SUCCESS);
-        }
-        if (userOptional.get().getRole() != Role.PROVIDER) {
-            return Response.response(false, "You are not a provider to do this action", ResponseType.SUCCESS);
-        }
-        Optional<Branch> branchOptional = branchRepository.findById(id);
-        if (branchOptional.isPresent()) {
-            branchRepository.deleteById(id);
-            return Response.response(true, "branch deleted successfully", ResponseType.SUCCESS);
-        } else {
+        Provider provider = currentUserService.provider(authentication);
+        Branch branch = branchRepository.findById(id).orElse(null);
+        if (branch == null) {
             return Response.response(false, "there is no branch with this id : " + id, ResponseType.NOT_FOUND);
         }
+        requireOwner(branch, provider);
+        branchRepository.deleteById(id);
+        return Response.response(true, "branch deleted successfully", ResponseType.SUCCESS);
     }
 
     @Override
@@ -116,5 +83,11 @@ public class BranchController extends Controller<Branch, BranchDto, Long> {
     @GetMapping("/by-provider/{providerId}")
     public ResponseEntity<Response<List<Branch>>> getBranchesByProvider(@PathVariable Long providerId) {
         return Response.response(branchRepository.findAllByProviderId(providerId), "Branches for provider", ResponseType.SUCCESS);
+    }
+
+    private void requireOwner(Branch branch, Provider provider) {
+        if (branch.getProvider() == null || !branch.getProvider().getId().equals(provider.getId())) {
+            throw ApiException.forbidden("You can only manage your own branches");
+        }
     }
 }

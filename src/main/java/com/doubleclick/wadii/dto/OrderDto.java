@@ -16,7 +16,8 @@ public class OrderDto {
     private String carModelYear;
     private String comment;
     private LocalDate date;
-    private Long userId;
+    private Long userId; // ignored: the owner always comes from the JWT
+    private Long providerId; // optional: send the order directly to one provider
     private Double latitude;
     private Double longitude;
     private List<Long> servicesIds;
@@ -26,7 +27,7 @@ public class OrderDto {
         return carModelYear != null && !carModelYear.trim().isEmpty()
                 && comment != null && !comment.trim().isEmpty()
                 && date != null
-                && userId != null
+
                 && !servicesIds.isEmpty()
                 && !spareParts.isEmpty();
     }

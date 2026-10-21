@@ -53,7 +53,7 @@ public class ProviderRequest {
     private List<String> links;
 
     @ManyToOne
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "user_id", nullable = false, unique = true)
     @JsonIgnoreProperties({"provider", "orders", "following", "rates", "hibernateLazyInitializer"})
     private User user;
 

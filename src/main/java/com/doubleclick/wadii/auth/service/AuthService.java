@@ -6,9 +6,10 @@ import com.doubleclick.wadii.utils.Response;
 import org.springframework.http.ResponseEntity;
 
 public interface AuthService {
-    ResponseEntity<Response<User>> registerUser(AuthRequest authRequest);
 
-    ResponseEntity<Response<User>> authenticateUser(String username, String password,String fcm);
+    ResponseEntity<Response<Object>> registerUser(AuthRequest authRequest);
+
+    ResponseEntity<Response<Object>> authenticateUser(String username, String password, String fcm);
 
     ResponseEntity<Response<User>> showById(Long id);
 }

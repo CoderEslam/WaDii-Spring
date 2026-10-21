@@ -14,4 +14,6 @@ public interface RateRepository extends JpaRepository<Rate, Long> {
 
     Optional<Rate> findByUserIdAndProviderId(Long userId, Long providerId);
 
+    boolean existsByUserIdAndOrderId(Long userId, Long orderId);
+
 }

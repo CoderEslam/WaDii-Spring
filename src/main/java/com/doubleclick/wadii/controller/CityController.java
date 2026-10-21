@@ -39,10 +39,10 @@ public class CityController extends Controller<City, CityDto, Long> {
     public ResponseEntity<Response<City>> insert(Authentication authentication, @RequestBody CityDto dto) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+            return Response.response(null, "User not exist", ResponseType.UNAUTHORIZED);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(null, "You are not admin to do this action", ResponseType.FORBIDDEN);
         }
         if (dto.isNotEmpty()) {
             Optional<Province> province = provinceRepository.findById(dto.getProvinceId());
@@ -66,10 +66,10 @@ public class CityController extends Controller<City, CityDto, Long> {
     public ResponseEntity<Response<City>> update(Authentication authentication, @RequestBody CityDto dto) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+            return Response.response(null, "User not exist", ResponseType.UNAUTHORIZED);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(null, "You are not admin to do this action", ResponseType.FORBIDDEN);
         }
         if (dto.isNotEmpty()) {
             Optional<City> existing = cityRepository.findById(dto.getId());
@@ -94,10 +94,10 @@ public class CityController extends Controller<City, CityDto, Long> {
     public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(false, "User not exist", ResponseType.SUCCESS);
+            return Response.response(false, "User not exist", ResponseType.UNAUTHORIZED);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(false, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(false, "You are not admin to do this action", ResponseType.FORBIDDEN);
         }
         if (cityRepository.existsById(id)) {
             cityRepository.deleteById(id);

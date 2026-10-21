@@ -15,6 +15,7 @@ import java.util.List;
 public class ResponseDto {
 
     private Long id;
+    private Long responseId; // accept-response / cancel-response (falls back to id)
     private Long providerId;
     private Long orderId;
     private String comment;

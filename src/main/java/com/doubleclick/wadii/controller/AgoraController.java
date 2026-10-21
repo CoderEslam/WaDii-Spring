@@ -27,6 +27,7 @@ public class AgoraController {
     private final AgoraTokenService agoraTokenService;
     private final CallSignalingService callSignalingService;
     private final UserRepository userRepository;
+    private final com.doubleclick.wadii.service.ChatAccessService chatAccessService;
 
     @PostMapping("/token")
     public ResponseEntity<Response<AgoraTokenResponse>> token(Authentication authentication, @RequestBody AgoraTokenRequest request) {
@@ -82,7 +83,9 @@ public class AgoraController {
         try {
             long a = Long.parseLong(parts[0]);
             long b = Long.parseLong(parts[1]);
-            return a == userId || b == userId;
+            if (a != userId && b != userId) return false;
+            // calls are only allowed with the user connected through an accepted order
+            return chatAccessService.canCommunicate(a, b);
         } catch (NumberFormatException e) {
             return false;
         }

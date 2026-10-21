@@ -1,298 +1,304 @@
 package com.doubleclick.wadii.controller;
 
 import com.doubleclick.wadii.auth.model.User;
-import com.doubleclick.wadii.auth.repository.UserRepository;
+import com.doubleclick.wadii.auth.service.CurrentUserService;
 import com.doubleclick.wadii.dto.ResponseDto;
 import com.doubleclick.wadii.dto.SparePartsPriceDto;
 import com.doubleclick.wadii.entities.*;
-import com.doubleclick.wadii.notification.Notification;
-import com.doubleclick.wadii.notification.NotificationService;
+import com.doubleclick.wadii.exception.ApiException;
+import com.doubleclick.wadii.repository.OrderProviderTargetRepository;
 import com.doubleclick.wadii.repository.OrderRepository;
-import com.doubleclick.wadii.repository.ProviderRepository;
 import com.doubleclick.wadii.repository.ResponseRepository;
-import com.doubleclick.wadii.repository.SparePartsPriceRepository;
-import com.doubleclick.wadii.repository.UserNotificationRepository;
+import com.doubleclick.wadii.service.UserNotifier;
 import com.doubleclick.wadii.ts.Controller;
 import com.doubleclick.wadii.utils.Response;
 import com.doubleclick.wadii.utils.ResponseType;
-import com.google.gson.JsonObject;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/responses")
-
 public class ResponseController extends Controller<Responses, ResponseDto, Long> {
 
-    private final UserRepository userRepository;
     private final ResponseRepository responseRepository;
-    private final ProviderRepository providerRepository;
-    private final SparePartsPriceRepository sparePartsPriceRepository;
     private final OrderRepository orderRepository;
-    private final UserNotificationRepository userNotificationRepository;
-    private final NotificationService notificationService;
+    private final OrderProviderTargetRepository targetRepository;
+    private final CurrentUserService currentUserService;
+    private final UserNotifier userNotifier;
 
+    // ---------------------------------------------------------------- read
+
+    /** Visible to admins, the order owner and the provider who wrote it. */
     @Override
     public ResponseEntity<Response<Responses>> show(Long id) {
-        return responseRepository.findById(id)
-                .map(responses -> Response.response(responses, "Done", ResponseType.SUCCESS))
-                .orElseGet(() -> Response.response(null, "there is no response with this id : " + id, ResponseType.NOT_FOUND));
-    }
-
-    //    @Override
-//    public ResponseEntity<Response<Responses>> insert(Authentication authentication, ResponseDto responseDto) {
-//        if (responseDto.isNotEmpty()) {
-//            Optional<Provider> providerOptional = providerRepository.findById(responseDto.getProviderId());
-//            if (providerOptional.isPresent()) {
-//                Responses responses = new Responses();
-//                responses.setId(responseDto.getId());
-//                responses.setComment(responseDto.getComment());
-//                responses.setProvider(providerOptional.get());
-//                responses.setOrder(Objects.requireNonNull(orderController.show(responseDto.getOrderId()).getBody()).getData());
-//                responses = responseRepository.save(responses);
-//                if (responseDto.getSparePartsPrice() != null && !responseDto.getSparePartsPrice().isEmpty()) {
-//                    for (SparePartsPriceDto sparePartsPriceDto : responseDto.getSparePartsPrice()) {
-//                        SparePartsPrice sparePartsPrice = new SparePartsPrice();
-//                        sparePartsPrice.setResponse(responses);
-//                        sparePartsPrice.setPrice(sparePartsPriceDto.getPrice());
-//                        sparePartsPrice.setSparePart(new SpareParts(sparePartsPriceDto.getId()));
-//                        sparePartsPrice = sparePartsPriceRepository.save(sparePartsPrice);
-//                    }
-//                }
-//                return Response.response(responses, "Response saved successfully", ResponseType.SUCCESS);
-//            } else {
-//                return Response.response(null, "there is no provider with this id : " + responseDto.getProviderId(), ResponseType.NOT_FOUND);
-//            }
-//        } else {
-//            return Response.response(null, "name is empty", ResponseType.ERROR);
-//        }
-//    }
-    @Override
-    public ResponseEntity<Response<Responses>> insert(Authentication authentication, @RequestBody ResponseDto responseDto) {
-        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        if (userOptional.isEmpty()) {
-            return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
+        User caller = currentUserService.user();
+        Responses response = responseRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound("there is no response with this id : " + id));
+        boolean admin = currentUserService.isAdmin(caller);
+        boolean owner = response.getOrder().getUser().getId().equals(caller.getId());
+        boolean author = response.getProvider().getUser().getId().equals(caller.getId());
+        if (!admin && !owner && !author) {
+            throw ApiException.forbidden("You are not allowed to access this response");
         }
-        if (userOptional.get().getRole() != Role.PROVIDER) {
-            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
-        }
-        if (responseDto.isNotEmpty()) {
-            Provider provider = providerRepository.findById(responseDto.getProviderId())
-                    .orElseThrow(() -> new RuntimeException("No provider with id: " + responseDto.getProviderId()));
-
-            Order order = orderRepository.findById(responseDto.getOrderId())
-                    .orElseThrow(() -> new RuntimeException("No order with id: " + responseDto.getOrderId()));
-
-            Responses responses = new Responses();
-            responses.setComment(responseDto.getComment());
-            responses.setLatitude(responseDto.getLatitude());
-            responses.setLongitude(responseDto.getLongitude());
-            responses.setProvider(provider);
-            responses.setOrder(order);
-            responses.setResponsesState(ResponsesState.PENDING);
-            responses = responseRepository.save(responses);
-
-            List<SparePartsPriceDto> priceDtos = responseDto.getSparePartsPrice();
-            if (priceDtos != null && !priceDtos.isEmpty()) {
-                List<SparePartsPrice> sparePartsPriceList = new ArrayList<>();
-                for (SparePartsPriceDto sparePartsPriceDto : priceDtos) {
-                    SparePartsPrice sparePartsPrice = new SparePartsPrice();
-                    sparePartsPrice.setResponse(responses);
-                    sparePartsPrice.setPrice(sparePartsPriceDto.getPrice());
-                    sparePartsPrice.setSparePart(new SpareParts(sparePartsPriceDto.getId()));
-                    sparePartsPriceList.add(sparePartsPrice);
-                }
-                sparePartsPriceList = sparePartsPriceRepository.saveAll(sparePartsPriceList);
-                responses.setSparePartsPrices(sparePartsPriceList);
-                responses = responseRepository.save(responses);
-            }
-            return Response.response(responses, "Response saved successfully", ResponseType.SUCCESS);
-        } else {
-            return Response.response(null, "Invalid input data", ResponseType.ERROR);
-        }
-    }
-
-    @Override
-    public ResponseEntity<Response<Responses>> update(Authentication authentication, ResponseDto responseDto) {
-        if (responseDto.getId() == null) {
-            return Response.response(null, "response id is required", ResponseType.ERROR);
-        }
-        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        if (userOptional.isEmpty()) {
-            return Response.response(null, "authenticated user not found", ResponseType.NOT_FOUND);
-        }
-        if (userOptional.get().getRole() != Role.PROVIDER) {
-            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
-        }
-        Optional<Responses> responsesOptional = responseRepository.findById(responseDto.getId());
-        if (responsesOptional.isEmpty()) {
-            return Response.response(null, "there is no response with this id : " + responseDto.getId(), ResponseType.NOT_FOUND);
-        }
-        Responses responses = responsesOptional.get();
-        if (!responses.getProvider().getUser().getId().equals(userOptional.get().getId())) {
-            return Response.response(null, "You can only update responses you created", ResponseType.SUCCESS);
-        }
-        if (responseDto.getComment() != null && !responseDto.getComment().trim().isEmpty()) {
-            responses.setComment(responseDto.getComment());
-        }
-        if (responseDto.getLatitude() != null) responses.setLatitude(responseDto.getLatitude());
-        if (responseDto.getLongitude() != null) responses.setLongitude(responseDto.getLongitude());
-        if (responseDto.getProviderId() != null) {
-            Optional<Provider> providerOptional = providerRepository.findById(responseDto.getProviderId());
-            if (providerOptional.isEmpty()) {
-                return Response.response(null, "there is no provider with this id : " + responseDto.getProviderId(), ResponseType.NOT_FOUND);
-            }
-            responses.setProvider(providerOptional.get());
-        }
-        responses = responseRepository.save(responses);
-
-        List<SparePartsPriceDto> priceDtos = responseDto.getSparePartsPrice();
-        if (priceDtos != null && !priceDtos.isEmpty()) {
-            if (responses.getSparePartsPrices() != null && !responses.getSparePartsPrices().isEmpty()) {
-                sparePartsPriceRepository.deleteAll(responses.getSparePartsPrices());
-            }
-            List<SparePartsPrice> sparePartsPriceList = new ArrayList<>();
-            for (SparePartsPriceDto sparePartsPriceDto : priceDtos) {
-                SparePartsPrice sparePartsPrice = new SparePartsPrice();
-                sparePartsPrice.setResponse(responses);
-                sparePartsPrice.setPrice(sparePartsPriceDto.getPrice());
-                sparePartsPrice.setSparePart(new SpareParts(sparePartsPriceDto.getId()));
-                sparePartsPriceList.add(sparePartsPrice);
-            }
-            sparePartsPriceList = sparePartsPriceRepository.saveAll(sparePartsPriceList);
-            responses.setSparePartsPrices(sparePartsPriceList);
-            responses = responseRepository.save(responses);
-        }
-
-        return Response.response(responses, "Response updated successfully", ResponseType.SUCCESS);
-    }
-
-    @Override
-    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
-        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        if (userOptional.isEmpty()) {
-            return Response.response(false, "authenticated user not found", ResponseType.NOT_FOUND);
-        }
-        Optional<Responses> responsesOptional = responseRepository.findById(id);
-        if (responsesOptional.isPresent()) {
-            if (!responsesOptional.get().getProvider().getUser().getId().equals(userOptional.get().getId())) {
-                return Response.response(false, "You can only delete responses you created", ResponseType.SUCCESS);
-            }
-            responseRepository.deleteById(id);
-            return Response.response(true, "response deleted successfully", ResponseType.SUCCESS);
-        } else {
-            return Response.response(false, "there is no response with this id : " + id, ResponseType.NOT_FOUND);
-        }
+        return Response.response(response, "Done", ResponseType.SUCCESS);
     }
 
     @Override
     public ResponseEntity<Response<List<Responses>>> readAll() {
+        currentUserService.admin();
         return Response.response(responseRepository.findAll(), "All responses", ResponseType.SUCCESS);
     }
 
+    /** Responses (in every state) to the orders of the current customer. */
     @GetMapping("/get-all-response-of-user")
     public ResponseEntity<Response<List<Responses>>> findAllByUserId(Authentication authentication) {
-        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        if (userOptional.isPresent()) {
-            return Response.response(responseRepository.findAllByUserId(userOptional.get().getId()), "All responses", ResponseType.SUCCESS);
-        } else {
-            return Response.response(null, "you are no authenticate", ResponseType.SUCCESS);
-        }
+        User user = currentUserService.user(authentication);
+        return Response.response(responseRepository.findAllByUserId(user.getId()), "All responses", ResponseType.SUCCESS);
     }
 
+    // ---------------------------------------------------------------- provider side
 
+    /** The provider always comes from the JWT; providerId in the body is ignored. */
+    @Override
+    @Transactional
+    public ResponseEntity<Response<Responses>> insert(Authentication authentication, @RequestBody ResponseDto dto) {
+        Provider provider = currentUserService.provider(authentication);
+        if (dto.getOrderId() == null) {
+            throw ApiException.badRequest("orderId is required");
+        }
+        if (dto.getComment() == null || dto.getComment().trim().isEmpty()) {
+            throw ApiException.badRequest("comment is required");
+        }
+        // Lock the order so a response cannot slip in while the customer is accepting another one.
+        Order order = orderRepository.findByIdForUpdate(dto.getOrderId())
+                .orElseThrow(() -> ApiException.notFound("there is no order with this id : " + dto.getOrderId()));
+
+        if (!provider.isEligibleForOrders()) {
+            throw ApiException.forbidden("Your provider account is not active or not accepting orders");
+        }
+        OrderProviderTarget target = targetRepository.findByOrderIdAndProviderId(order.getId(), provider.getId())
+                .orElseThrow(() -> ApiException.forbidden("You were not invited to respond to this order"));
+        if (!order.getStatus().isOpen()) {
+            throw ApiException.conflict("This order is no longer open for responses");
+        }
+        boolean alreadyResponded = responseRepository.findByOrderId(order.getId()).stream()
+                .anyMatch(r -> r.getProvider().getId().equals(provider.getId()));
+        if (alreadyResponded) {
+            throw ApiException.conflict("You already responded to this order");
+        }
+
+        Responses response = new Responses();
+        response.setComment(dto.getComment().trim());
+        response.setLatitude(dto.getLatitude());
+        response.setLongitude(dto.getLongitude());
+        response.setProvider(provider);
+        response.setOrder(order);
+        response.setResponsesState(ResponsesState.PENDING);
+        applyPrices(response, order, dto.getSparePartsPrice());
+        response = responseRepository.save(response);
+
+        target.setStatus(TargetStatus.RESPONDED);
+        target.setRespondedAt(LocalDateTime.now());
+        targetRepository.save(target);
+        if (order.getStatus() == OrderStatus.PENDING) {
+            order.setStatus(OrderStatus.RESPONSES_AVAILABLE);
+            orderRepository.save(order);
+        }
+        userNotifier.notify(order.getUser(), "New offer",
+                "You received a new offer for order #" + order.getId() + ".", "NEW_RESPONSE", order.getId());
+        return Response.response(response, "Response saved successfully", ResponseType.SUCCESS);
+    }
+
+    @Override
+    @Transactional
+    public ResponseEntity<Response<Responses>> update(Authentication authentication, ResponseDto dto) {
+        Provider provider = currentUserService.provider(authentication);
+        if (dto.getId() == null) {
+            throw ApiException.badRequest("response id is required");
+        }
+        Responses response = responseRepository.findById(dto.getId())
+                .orElseThrow(() -> ApiException.notFound("there is no response with this id : " + dto.getId()));
+        if (!response.getProvider().getId().equals(provider.getId())) {
+            throw ApiException.forbidden("You can only update responses you created");
+        }
+        Order order = orderRepository.findByIdForUpdate(response.getOrder().getId())
+                .orElseThrow(() -> ApiException.notFound("order not found"));
+        if (response.getResponsesState() != ResponsesState.PENDING || !order.getStatus().isOpen()) {
+            throw ApiException.conflict("Only a pending response on an open order can be updated");
+        }
+        if (dto.getComment() != null) {
+            if (dto.getComment().trim().isEmpty()) {
+                throw ApiException.badRequest("comment must not be blank");
+            }
+            response.setComment(dto.getComment().trim());
+        }
+        if (dto.getLatitude() != null) response.setLatitude(dto.getLatitude());
+        if (dto.getLongitude() != null) response.setLongitude(dto.getLongitude());
+        if (dto.getSparePartsPrice() != null && !dto.getSparePartsPrice().isEmpty()) {
+            applyPrices(response, order, dto.getSparePartsPrice());
+        }
+        response = responseRepository.save(response);
+        return Response.response(response, "Response updated successfully", ResponseType.SUCCESS);
+    }
+
+    /** A provider withdraws their pending response. It is kept as history with state CANCELED. */
+    @Override
+    @Transactional
+    public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
+        Provider provider = currentUserService.provider(authentication);
+        Responses response = responseRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound("there is no response with this id : " + id));
+        if (!response.getProvider().getId().equals(provider.getId())) {
+            throw ApiException.forbidden("You can only cancel responses you created");
+        }
+        orderRepository.findByIdForUpdate(response.getOrder().getId());
+        if (response.getResponsesState() != ResponsesState.PENDING) {
+            throw ApiException.conflict("Only a pending response can be canceled");
+        }
+        response.setResponsesState(ResponsesState.CANCELED);
+        responseRepository.save(response);
+        return Response.response(true, "response canceled successfully", ResponseType.SUCCESS);
+    }
+
+    // ---------------------------------------------------------------- customer side
+
+    /**
+     * Accepts exactly one response: the chosen one becomes ACCEPTED, every other pending
+     * response is DECLINED (never deleted), and the order records the winning provider.
+     * Runs under a row lock on the order so two requests can never both win.
+     */
     @PostMapping("/accept-response")
-    public ResponseEntity<Response<Responses>> accept(Authentication authentication, @RequestBody ResponseDto responseDto) {
-        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        if (userOptional.isPresent()) {
-            Optional<Responses> responsesOptional = responseRepository.findById(responseDto.getId());
-            if (responsesOptional.isPresent()) {
-                Responses responses = responsesOptional.get();
-                responses.setResponsesState(ResponsesState.ACCEPT);
-                responses = responseRepository.save(responses);
+    @Transactional
+    public ResponseEntity<Response<Responses>> accept(Authentication authentication, @RequestBody ResponseDto dto) {
+        User user = currentUserService.user(authentication);
+        Long responseId = requestedResponseId(dto);
+        Long orderId = responseRepository.findById(responseId)
+                .orElseThrow(() -> ApiException.notFound("there is no response with this id : " + responseId))
+                .getOrder().getId();
 
-                sendResponseAcceptedNotification(responses.getProvider().getUser());
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> ApiException.notFound("there is no order with this id : " + orderId));
+        requireOrderOwner(order, user);
+        if (!order.getStatus().isOpen()) {
+            throw ApiException.conflict("This order is not open: it is " + order.getStatus());
+        }
 
-                Long acceptedResponseId = responses.getId();
-                List<Responses> otherResponses = responseRepository.findByOrderId(responses.getOrder().getId())
-                        .stream()
-                        .filter(r -> !r.getId().equals(acceptedResponseId))
-                        .collect(Collectors.toList());
-                if (!otherResponses.isEmpty()) {
-                    responseRepository.deleteAll(otherResponses);
-                }
+        List<Responses> all = responseRepository.findByOrderId(order.getId());
+        Responses chosen = all.stream().filter(r -> r.getId().equals(responseId)).findFirst()
+                .orElseThrow(() -> ApiException.badRequest("The response does not belong to this order"));
+        if (all.stream().anyMatch(r -> r.getResponsesState() == ResponsesState.ACCEPTED)) {
+            throw ApiException.conflict("A response was already accepted for this order");
+        }
+        if (chosen.getResponsesState() != ResponsesState.PENDING) {
+            throw ApiException.conflict("Only a pending response can be accepted");
+        }
 
-                return Response.response(responses, "All responses", ResponseType.SUCCESS);
-            } else {
-                return Response.response(null, "there is no response with this id : " + responseDto.getId(), ResponseType.NOT_FOUND);
+        chosen.setResponsesState(ResponsesState.ACCEPTED);
+        responseRepository.save(chosen);
+        userNotifier.notify(chosen.getProvider().getUser(), "Offer accepted",
+                "Your offer for order #" + order.getId() + " was accepted.", "RESPONSE_ACCEPTED", order.getId());
+
+        for (Responses other : all) {
+            if (!other.getId().equals(chosen.getId()) && other.getResponsesState() == ResponsesState.PENDING) {
+                other.setResponsesState(ResponsesState.DECLINED);
+                responseRepository.save(other);
+                userNotifier.notify(other.getProvider().getUser(), "Offer not selected",
+                        "Your offer for order #" + order.getId() + " was not selected.", "RESPONSE_DECLINED", order.getId());
             }
-        } else {
-            return Response.response(null, "there is no user with this email : " + authentication.getName(), ResponseType.NOT_FOUND);
         }
+
+        order.setStatus(OrderStatus.ACCEPTED);
+        order.setAcceptedProvider(chosen.getProvider());
+        order.setAcceptedResponseId(chosen.getId());
+        orderRepository.save(order);
+        return Response.response(chosen, "Response accepted", ResponseType.SUCCESS);
     }
 
-    private void sendResponseAcceptedNotification(User providerUser) {
-        String message = "Your response has been accepted.";
-        UserNotification userNotification = new UserNotification();
-        userNotification.setTitle("Response Accepted");
-        userNotification.setBody(message);
-        userNotification.setType("RESPONSE_ACCEPTED");
-        userNotification.setUser(providerUser);
-        userNotificationRepository.save(userNotification);
-
-        if (providerUser.getFcmToken() == null || providerUser.getFcmToken().isBlank()) return;
-        try {
-            JsonObject body = new JsonObject();
-            body.addProperty("body", message);
-            Notification notification = new Notification("Response Accepted", body, "RESPONSE_ACCEPTED", "SENT", providerUser.getId());
-            notificationService.sendNotification(notification);
-        } catch (Exception e) {
-            System.out.println("ResponseController failed to send response-accepted notification: " + e.getMessage());
-        }
-    }
-
+    /** The customer declines one pending response. It stays as history with state DECLINED. */
     @PostMapping("/cancel-response")
-    public ResponseEntity<Response<Responses>> cancel(Authentication authentication, @RequestBody ResponseDto responseDto) {
-        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        if (userOptional.isPresent()) {
-            Optional<Responses> responsesOptional = responseRepository.findById(responseDto.getId());
-            if (responsesOptional.isPresent()) {
-                Responses responses = responsesOptional.get();
-                User providerUser = responses.getProvider().getUser();
-                responseRepository.deleteById(responses.getId());
-                sendResponseRejectedNotification(providerUser);
-                return Response.response(responses, "Response rejected", ResponseType.SUCCESS);
-            } else {
-                return Response.response(null, "there is no response with this id : " + responseDto.getId(), ResponseType.NOT_FOUND);
-            }
-        } else {
-            return Response.response(null, "there is no user with this email : " + authentication.getName(), ResponseType.NOT_FOUND);
+    @Transactional
+    public ResponseEntity<Response<Responses>> cancel(Authentication authentication, @RequestBody ResponseDto dto) {
+        User user = currentUserService.user(authentication);
+        Long responseId = requestedResponseId(dto);
+        Responses response = responseRepository.findById(responseId)
+                .orElseThrow(() -> ApiException.notFound("there is no response with this id : " + responseId));
+        Order order = orderRepository.findByIdForUpdate(response.getOrder().getId())
+                .orElseThrow(() -> ApiException.notFound("order not found"));
+        requireOrderOwner(order, user);
+        if (response.getResponsesState() != ResponsesState.PENDING || !order.getStatus().isOpen()) {
+            throw ApiException.conflict("Only a pending response on an open order can be declined");
+        }
+        response.setResponsesState(ResponsesState.DECLINED);
+        responseRepository.save(response);
+        userNotifier.notify(response.getProvider().getUser(), "Offer not selected",
+                "Your offer for order #" + order.getId() + " was declined.", "RESPONSE_REJECTED", order.getId());
+        return Response.response(response, "Response rejected", ResponseType.SUCCESS);
+    }
+
+    // ---------------------------------------------------------------- helpers
+
+    private Long requestedResponseId(ResponseDto dto) {
+        Long id = dto.getResponseId() != null ? dto.getResponseId() : dto.getId();
+        if (id == null) {
+            throw ApiException.badRequest("responseId is required");
+        }
+        return id;
+    }
+
+    private void requireOrderOwner(Order order, User user) {
+        if (order.getUser() == null || !order.getUser().getId().equals(user.getId())) {
+            throw ApiException.forbidden("You can only manage responses to your own orders");
         }
     }
 
-    private void sendResponseRejectedNotification(User providerUser) {
-        String message = "Your response has been rejected.";
-        UserNotification userNotification = new UserNotification();
-        userNotification.setTitle("Response Rejected");
-        userNotification.setBody(message);
-        userNotification.setType("RESPONSE_REJECTED");
-        userNotification.setUser(providerUser);
-        userNotificationRepository.save(userNotification);
-
-        if (providerUser.getFcmToken() == null || providerUser.getFcmToken().isBlank()) return;
-        try {
-            JsonObject body = new JsonObject();
-            body.addProperty("body", message);
-            Notification notification = new Notification("Response Rejected", body, "RESPONSE_REJECTED", "SENT", providerUser.getId());
-            notificationService.sendNotification(notification);
-        } catch (Exception e) {
-            System.out.println("ResponseController failed to send response-rejected notification: " + e.getMessage());
+    /**
+     * Replaces the response's spare-part prices after checking that every price refers to a spare part
+     * of this order and is not negative, and recomputes the total on the server.
+     */
+    private void applyPrices(Responses response, Order order, List<SparePartsPriceDto> dtos) {
+        if (response.getSparePartsPrices() == null) {
+            response.setSparePartsPrices(new ArrayList<>());
         }
+        response.getSparePartsPrices().clear();
+        BigDecimal total = BigDecimal.ZERO;
+        if (dtos != null) {
+            Map<Long, SpareParts> orderParts = new HashMap<>();
+            if (order.getSpareParts() != null) {
+                for (SpareParts part : order.getSpareParts()) {
+                    orderParts.put(part.getId(), part);
+                }
+            }
+            Set<Long> seen = new HashSet<>();
+            for (SparePartsPriceDto dto : dtos) {
+                if (dto.getId() == null || !orderParts.containsKey(dto.getId())) {
+                    throw ApiException.badRequest("Spare part " + dto.getId() + " does not belong to this order");
+                }
+                if (!seen.add(dto.getId())) {
+                    throw ApiException.badRequest("Spare part " + dto.getId() + " is priced more than once");
+                }
+                if (dto.getPrice() == null || dto.getPrice().signum() < 0) {
+                    throw ApiException.badRequest("price must be zero or greater");
+                }
+                SparePartsPrice price = new SparePartsPrice();
+                price.setResponse(response);
+                price.setSparePart(orderParts.get(dto.getId()));
+                price.setPrice(dto.getPrice());
+                response.getSparePartsPrices().add(price);
+                total = total.add(dto.getPrice());
+            }
+        }
+        response.setTotalPrice(total);
     }
 }

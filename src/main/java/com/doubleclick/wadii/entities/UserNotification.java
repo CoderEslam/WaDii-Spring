@@ -31,6 +31,9 @@ public class UserNotification {
 
     private Boolean isRead = false;
 
+    // Order this notification is about (null for non-order notifications)
+    private Long orderId;
+
     private LocalDateTime createdAt = LocalDateTime.now();
 
     @ManyToOne(fetch = FetchType.LAZY)

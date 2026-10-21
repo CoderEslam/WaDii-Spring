@@ -1,13 +1,13 @@
 package com.doubleclick.wadii.controller;
 
 import com.doubleclick.wadii.auth.model.User;
-import com.doubleclick.wadii.auth.repository.UserRepository;
+import com.doubleclick.wadii.auth.service.CurrentUserService;
 import com.doubleclick.wadii.dto.OfferDto;
 import com.doubleclick.wadii.entities.Offer;
 import com.doubleclick.wadii.entities.Provider;
-import com.doubleclick.wadii.entities.Role;
+import com.doubleclick.wadii.entities.Service;
+import com.doubleclick.wadii.exception.ApiException;
 import com.doubleclick.wadii.repository.OfferRepository;
-import com.doubleclick.wadii.repository.ProviderRepository;
 import com.doubleclick.wadii.repository.SavedOfferRepository;
 import com.doubleclick.wadii.repository.ServiceRepository;
 import com.doubleclick.wadii.ts.Controller;
@@ -19,7 +19,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 import static org.springframework.security.core.context.SecurityContextHolder.getContext;
@@ -30,10 +29,9 @@ import static org.springframework.security.core.context.SecurityContextHolder.ge
 public class OffersController extends Controller<Offer, OfferDto, Long> {
 
     private final OfferRepository offerRepository;
-    private final ProviderRepository providerRepository;
     private final SavedOfferRepository savedOfferRepository;
     private final ServiceRepository serviceRepository;
-    private final UserRepository userRepository;
+    private final CurrentUserService currentUserService;
 
     @Override
     public ResponseEntity<Response<Offer>> show(Long id) {
@@ -42,65 +40,41 @@ public class OffersController extends Controller<Offer, OfferDto, Long> {
                 .orElseGet(() -> Response.response(null, "there is no offer with this id : " + id, ResponseType.NOT_FOUND));
     }
 
+    /** The offer always belongs to the authenticated provider; providerId in the body is ignored. */
     @Override
-    public ResponseEntity<Response<Offer>> insert(Authentication authentication, @RequestBody OfferDto offerDto) {
-        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+    public ResponseEntity<Response<Offer>> insert(Authentication authentication, @RequestBody OfferDto dto) {
+        Provider provider = currentUserService.provider(authentication);
+        if (dto.getTitle() == null || dto.getTitle().trim().isEmpty()
+                || dto.getDescription() == null || dto.getDescription().trim().isEmpty()
+                || dto.getEndDate() == null) {
+            throw ApiException.badRequest("title, description and endDate are required");
         }
-        if (userOptional.get().getRole() != Role.PROVIDER) {
-            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
+        Offer offer = new Offer();
+        offer.setTitle(dto.getTitle().trim());
+        offer.setDescription(dto.getDescription().trim());
+        offer.setEndDate(dto.getEndDate());
+        offer.setProvider(provider);
+        if (dto.getServiceIds() != null && !dto.getServiceIds().isEmpty()) {
+            offer.setServices(loadServices(dto.getServiceIds()));
         }
-        if (offerDto.isNotEmpty()) {
-            Optional<Provider> provinceOptional = providerRepository.findById(offerDto.getProviderId());
-            if (provinceOptional.isPresent()) {
-                Offer offer = new Offer();
-                offer.setDescription(offerDto.getDescription());
-                offer.setTitle(offerDto.getTitle());
-                offer.setEndDate(offerDto.getEndDate());
-                offer.setProvider(provinceOptional.get());
-                if (offerDto.getServiceIds() != null && !offerDto.getServiceIds().isEmpty()) {
-                    offer.setServices(serviceRepository.findAllById(offerDto.getServiceIds()));
-                }
-                offer = offerRepository.save(offer);
-                return Response.response(offer, "Offer saved successfully", ResponseType.SUCCESS);
-            } else {
-                return Response.response(null, "there is no provider with this id : " + offerDto.getProviderId(), ResponseType.NOT_FOUND);
-            }
-        } else {
-            return Response.response(null, "name or province id is empty", ResponseType.ERROR);
-        }
+        offer = offerRepository.save(offer);
+        return Response.response(offer, "Offer saved successfully", ResponseType.SUCCESS);
     }
 
     @Override
-    public ResponseEntity<Response<Offer>> update(Authentication authentication, OfferDto offerDto) {
-        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+    public ResponseEntity<Response<Offer>> update(Authentication authentication, OfferDto dto) {
+        Provider provider = currentUserService.provider(authentication);
+        if (dto.getId() == null) {
+            throw ApiException.badRequest("offer id is required");
         }
-        if (userOptional.get().getRole() != Role.PROVIDER) {
-            return Response.response(null, "You are not a provider to do this action", ResponseType.SUCCESS);
-        }
-        if (offerDto.getId() == null) {
-            return Response.response(null, "offer id is required", ResponseType.ERROR);
-        }
-        Optional<Offer> offerOptional = offerRepository.findById(offerDto.getId());
-        if (offerOptional.isEmpty()) {
-            return Response.response(null, "there is no offer with this id : " + offerDto.getId(), ResponseType.NOT_FOUND);
-        }
-        Offer offer = offerOptional.get();
-        if (offerDto.getTitle() != null) offer.setTitle(offerDto.getTitle());
-        if (offerDto.getDescription() != null) offer.setDescription(offerDto.getDescription());
-        if (offerDto.getEndDate() != null) offer.setEndDate(offerDto.getEndDate());
-        if (offerDto.getProviderId() != null) {
-            Optional<Provider> providerOptional = providerRepository.findById(offerDto.getProviderId());
-            if (providerOptional.isEmpty()) {
-                return Response.response(null, "there is no provider with this id : " + offerDto.getProviderId(), ResponseType.NOT_FOUND);
-            }
-            offer.setProvider(providerOptional.get());
-        }
-        if (offerDto.getServiceIds() != null && !offerDto.getServiceIds().isEmpty()) {
-            offer.setServices(serviceRepository.findAllById(offerDto.getServiceIds()));
+        Offer offer = offerRepository.findById(dto.getId())
+                .orElseThrow(() -> ApiException.notFound("there is no offer with this id : " + dto.getId()));
+        requireOwner(offer, provider);
+        if (dto.getTitle() != null) offer.setTitle(dto.getTitle());
+        if (dto.getDescription() != null) offer.setDescription(dto.getDescription());
+        if (dto.getEndDate() != null) offer.setEndDate(dto.getEndDate());
+        if (dto.getServiceIds() != null && !dto.getServiceIds().isEmpty()) {
+            offer.setServices(loadServices(dto.getServiceIds()));
         }
         offer = offerRepository.save(offer);
         return Response.response(offer, "Offer updated successfully", ResponseType.SUCCESS);
@@ -108,55 +82,58 @@ public class OffersController extends Controller<Offer, OfferDto, Long> {
 
     @Override
     public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
-        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
-        if (userOptional.isEmpty()) {
-            return Response.response(false, "User not exist", ResponseType.SUCCESS);
-        }
-        if (userOptional.get().getRole() != Role.PROVIDER) {
-            return Response.response(false, "You are not a provider to do this action", ResponseType.SUCCESS);
-        }
-        Optional<Offer> offerOptional = offerRepository.findById(id);
-        if (offerOptional.isPresent()) {
-            offerRepository.deleteById(id);
-            return Response.response(true, "offer deleted successfully", ResponseType.SUCCESS);
-        } else {
+        Provider provider = currentUserService.provider(authentication);
+        Offer offer = offerRepository.findById(id).orElse(null);
+        if (offer == null) {
             return Response.response(false, "there is no offer with this id : " + id, ResponseType.NOT_FOUND);
         }
+        requireOwner(offer, provider);
+        offerRepository.deleteById(id);
+        return Response.response(true, "offer deleted successfully", ResponseType.SUCCESS);
     }
 
     @Override
     public ResponseEntity<Response<List<Offer>>> readAll() {
         List<Offer> offers = offerRepository.findAll();
-        Authentication authentication = getContext().getAuthentication();
-        if (authentication != null && authentication.getCredentials() instanceof String idStr) {
-            Long userId = Long.parseLong(idStr);
-            Set<Long> savedOfferIds = savedOfferRepository.findOfferIdsByUserId(userId);
-            offers.forEach(offer -> offer.setSaved(savedOfferIds.contains(offer.getId())));
-        }
+        markSaved(offers);
         return Response.response(offers, "All offers", ResponseType.SUCCESS);
     }
 
     @GetMapping("/filter-by-service/{serviceId}")
     public ResponseEntity<Response<List<Offer>>> filterByService(@PathVariable Long serviceId) {
         List<Offer> offers = offerRepository.findAllByServiceId(serviceId);
-        Authentication authentication = getContext().getAuthentication();
-        if (authentication != null && authentication.getCredentials() instanceof String idStr) {
-            Long userId = Long.parseLong(idStr);
-            Set<Long> savedOfferIds = savedOfferRepository.findOfferIdsByUserId(userId);
-            offers.forEach(offer -> offer.setSaved(savedOfferIds.contains(offer.getId())));
-        }
+        markSaved(offers);
         return Response.response(offers, "Offers filtered by service", ResponseType.SUCCESS);
     }
 
     @GetMapping("/filter-by-services")
     public ResponseEntity<Response<List<Offer>>> filterByServices(@RequestParam List<Long> serviceIds) {
         List<Offer> offers = offerRepository.findAllByServiceIdIn(serviceIds);
+        markSaved(offers);
+        return Response.response(offers, "Offers filtered by services", ResponseType.SUCCESS);
+    }
+
+    private void requireOwner(Offer offer, Provider provider) {
+        if (offer.getProvider() == null || !offer.getProvider().getId().equals(provider.getId())) {
+            throw ApiException.forbidden("You can only manage your own offers");
+        }
+    }
+
+    private List<Service> loadServices(List<Long> ids) {
+        List<Long> distinct = ids.stream().distinct().toList();
+        List<Service> services = serviceRepository.findAllById(distinct);
+        if (services.size() != distinct.size()) {
+            throw ApiException.badRequest("One or more service ids do not exist");
+        }
+        return services;
+    }
+
+    private void markSaved(List<Offer> offers) {
         Authentication authentication = getContext().getAuthentication();
         if (authentication != null && authentication.getCredentials() instanceof String idStr) {
             Long userId = Long.parseLong(idStr);
             Set<Long> savedOfferIds = savedOfferRepository.findOfferIdsByUserId(userId);
             offers.forEach(offer -> offer.setSaved(savedOfferIds.contains(offer.getId())));
         }
-        return Response.response(offers, "Offers filtered by services", ResponseType.SUCCESS);
     }
 }

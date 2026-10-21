@@ -36,6 +36,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final PresenceRegistry presenceRegistry;
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
+    private final com.doubleclick.wadii.service.ChatAccessService chatAccessService;
     private static final String TAG = "ChatWebSocketHandler";
     private static final Set<String> CALL_EVENTS = Set.of("CALL_INVITE", "CALL_ACCEPT", "CALL_REJECT", "CALL_END");
     // userId → open WebSocketSessions (a user may have multiple concurrent sockets, e.g. chat + calls)
@@ -95,6 +96,14 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         User to = toOpt.get();
         String type = (payload.getType() != null && !payload.getType().isBlank())
                 ? payload.getType().toLowerCase() : "text";
+        if (payload.getText() == null || payload.getText().isBlank() || !Set.of("text", "image", "audio").contains(type)) {
+            sendError(fromUserId, 400, "text must not be blank and type must be text, image or audio");
+            return;
+        }
+        if (!chatAccessService.canCommunicate(fromUserId, to.getId())) {
+            sendError(fromUserId, 403, "You can only chat with a user connected to you through an accepted order");
+            return;
+        }
 
         Message msg = new Message();
         msg.setText(payload.getText());
@@ -120,6 +129,10 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         // never trust the client-supplied sender id — it must match the authenticated socket
         signal.setFromUserId(fromUserId);
         if (signal.getToUserId() == null) return;
+        if (!chatAccessService.canCommunicate(fromUserId, signal.getToUserId())) {
+            sendError(fromUserId, 403, "You can only call a user connected to you through an accepted order");
+            return;
+        }
 
         boolean delivered = sendCallSignal(event, signal);
         if (!delivered && "CALL_INVITE".equals(event)) {
@@ -149,6 +162,14 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         sessions.computeIfPresent(userId, (k, v) -> v.isEmpty() ? null : v);
     }
 
+    private void sendError(Long userId, int code, String message) {
+        try {
+            send(userId, objectMapper.writeValueAsString(Map.of("event", "ERROR", "data", Map.of("code", code, "message", message))));
+        } catch (IOException ignored) {
+            // nothing else to do if the error cannot be serialized
+        }
+    }
+
     private boolean send(Long userId, String json) {
         Set<WebSocketSession> userSessions = sessions.get(userId);
         if (userSessions == null) return false;
@@ -175,14 +196,10 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         } catch (IOException e) {
             return;
         }
-        TextMessage msg = new TextMessage(json);
-        sessions.values().forEach(userSessions -> userSessions.forEach(s -> {
-            if (s.isOpen()) try {
-                s.sendMessage(msg);
-            } catch (IOException ignored) {
-                System.out.println(ignored.getMessage());
-            }
-        }));
+        // Presence is only shared with users connected through an accepted order.
+        for (Long counterpart : chatAccessService.counterparts(userId)) {
+            send(counterpart, json);
+        }
     }
 
     private Long userId(WebSocketSession session) {

@@ -37,10 +37,10 @@ public class ServiceController extends Controller<Service, ServicesDto, Long> {
     public ResponseEntity<Response<Service>> insert(Authentication authentication, @RequestBody ServicesDto servicesDto) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+            return Response.response(null, "User not exist", ResponseType.UNAUTHORIZED);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(null, "You are not admin to do this action", ResponseType.FORBIDDEN);
         }
         if (servicesDto.isNotEmpty()) {
             Optional<Service> serviceOptional = serviceRepository.findByName(servicesDto.getName());
@@ -61,10 +61,10 @@ public class ServiceController extends Controller<Service, ServicesDto, Long> {
     public ResponseEntity<Response<Service>> update(Authentication authentication, ServicesDto servicesDto) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+            return Response.response(null, "User not exist", ResponseType.UNAUTHORIZED);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(null, "You are not admin to do this action", ResponseType.FORBIDDEN);
         }
         if (servicesDto.isNotEmpty()) {
             Optional<Service> serviceOptional = serviceRepository.findById(servicesDto.getId());
@@ -86,10 +86,10 @@ public class ServiceController extends Controller<Service, ServicesDto, Long> {
     public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(false, "User not exist", ResponseType.SUCCESS);
+            return Response.response(false, "User not exist", ResponseType.UNAUTHORIZED);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(false, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(false, "You are not admin to do this action", ResponseType.FORBIDDEN);
         }
         Optional<Service> serviceOptional = serviceRepository.findById(id);
         if (serviceOptional.isPresent()) {

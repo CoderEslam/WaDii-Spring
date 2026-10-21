@@ -1,7 +1,6 @@
 package com.doubleclick.wadii.auth.controller;
 
 import com.doubleclick.wadii.auth.dto.AuthRequest;
-import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.auth.service.AuthService;
 import com.doubleclick.wadii.utils.Response;
 import lombok.RequiredArgsConstructor;
@@ -20,19 +19,12 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/register")
-    public ResponseEntity<Response<User>> register(@RequestBody AuthRequest request) {
+    public ResponseEntity<Response<Object>> register(@RequestBody AuthRequest request) {
         return authService.registerUser(request);
     }
 
     @PostMapping("/login")
-    public ResponseEntity<Response<User>> login(@RequestBody AuthRequest request) {
+    public ResponseEntity<Response<Object>> login(@RequestBody AuthRequest request) {
         return authService.authenticateUser(request.getEmail(), request.getPassword(), request.getFcmToken());
     }
-//
-//    @PostMapping("/show")
-//    public ResponseEntity<Response<User>> show(@RequestBody Map<String, Long> requestBody) {
-//        Long id = requestBody.get("id");
-//        return authService.showById(id);
-//    }
-
 }

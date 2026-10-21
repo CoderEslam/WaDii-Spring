@@ -36,10 +36,10 @@ public class CommonSparePartsController extends Controller<CommonSpareParts, Com
     public ResponseEntity<Response<CommonSpareParts>> insert(Authentication authentication, @RequestBody CommonSparePartsDto dto) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+            return Response.response(null, "User not exist", ResponseType.UNAUTHORIZED);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(null, "You are not admin to do this action", ResponseType.FORBIDDEN);
         }
         if (dto.isNotEmpty()) {
             Optional<CommonSpareParts> existing = commonSparePartsRepository.findByName(dto.getName());
@@ -60,10 +60,10 @@ public class CommonSparePartsController extends Controller<CommonSpareParts, Com
     public ResponseEntity<Response<CommonSpareParts>> update(Authentication authentication,@RequestBody CommonSparePartsDto dto) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+            return Response.response(null, "User not exist", ResponseType.UNAUTHORIZED);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(null, "You are not admin to do this action", ResponseType.FORBIDDEN);
         }
         if (dto.isNotEmpty()) {
             Optional<CommonSpareParts> partOptional = commonSparePartsRepository.findById(dto.getId());
@@ -84,10 +84,10 @@ public class CommonSparePartsController extends Controller<CommonSpareParts, Com
     public ResponseEntity<Response<Boolean>> delete(Authentication authentication,Long id) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(false, "User not exist", ResponseType.SUCCESS);
+            return Response.response(false, "User not exist", ResponseType.UNAUTHORIZED);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(false, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(false, "You are not admin to do this action", ResponseType.FORBIDDEN);
         }
         Optional<CommonSpareParts> partOptional = commonSparePartsRepository.findById(id);
         if (partOptional.isPresent()) {

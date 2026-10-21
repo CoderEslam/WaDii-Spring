@@ -13,7 +13,8 @@ public class RateDto {
     private String comment;
     private double rate;
     private Long providerId;
-    private Long userId;
+    private Long userId; // ignored: the rating user always comes from the JWT
+    private Long orderId; // the completed order being rated
 
     public Boolean isNotEmpty() {
         return !comment.isEmpty() &&

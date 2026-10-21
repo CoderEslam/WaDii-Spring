@@ -22,6 +22,7 @@ import java.util.Optional;
 public class ProvinceController extends Controller<Province, ProvinceDto, Long> {
 
     private final ProvinceRepository provinceRepository;
+    private final com.doubleclick.wadii.auth.service.CurrentUserService currentUserService;
     private final CountryRepository countryRepository;
 
     @Override
@@ -33,6 +34,7 @@ public class ProvinceController extends Controller<Province, ProvinceDto, Long> 
 
     @Override
     public ResponseEntity<Response<Province>> insert(Authentication authentication, @RequestBody ProvinceDto dto) {
+        currentUserService.admin(authentication);
         if (dto.isNotEmpty()) {
             Optional<Country> country = countryRepository.findById(dto.getCountryId());
             if (country.isEmpty()) {
@@ -53,6 +55,7 @@ public class ProvinceController extends Controller<Province, ProvinceDto, Long> 
 
     @Override
     public ResponseEntity<Response<Province>> update(Authentication authentication, @RequestBody ProvinceDto dto) {
+        currentUserService.admin(authentication);
         if (dto.isNotEmpty()) {
             Optional<Province> existing = provinceRepository.findById(dto.getId());
             if (existing.isEmpty()) {
@@ -74,6 +77,7 @@ public class ProvinceController extends Controller<Province, ProvinceDto, Long> 
 
     @Override
     public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
+        currentUserService.admin(authentication);
         if (provinceRepository.existsById(id)) {
             provinceRepository.deleteById(id);
             return Response.response(true, "Province deleted successfully", ResponseType.SUCCESS);

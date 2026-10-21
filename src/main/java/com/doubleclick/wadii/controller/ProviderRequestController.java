@@ -2,123 +2,145 @@ package com.doubleclick.wadii.controller;
 
 import com.doubleclick.wadii.auth.model.User;
 import com.doubleclick.wadii.auth.repository.UserRepository;
+import com.doubleclick.wadii.auth.service.CurrentUserService;
 import com.doubleclick.wadii.dto.ProviderRequestDto;
 import com.doubleclick.wadii.entities.*;
-import com.doubleclick.wadii.notification.Notification;
-import com.doubleclick.wadii.notification.NotificationService;
+import com.doubleclick.wadii.exception.ApiException;
 import com.doubleclick.wadii.repository.ProviderRepository;
 import com.doubleclick.wadii.repository.ProviderRequestRepository;
 import com.doubleclick.wadii.repository.ServiceRepository;
+import com.doubleclick.wadii.service.FileStorageService;
+import com.doubleclick.wadii.service.UserNotifier;
 import com.doubleclick.wadii.utils.Response;
 import com.doubleclick.wadii.utils.ResponseType;
-import com.google.gson.JsonObject;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/provider-requests")
 public class ProviderRequestController {
 
-    private static final String UPLOAD_DIR = "uploads/";
-
     private final ProviderRequestRepository providerRequestRepository;
     private final UserRepository userRepository;
     private final ProviderRepository providerRepository;
     private final ServiceRepository serviceRepository;
-    private final NotificationService notificationService;
+    private final CurrentUserService currentUserService;
+    private final FileStorageService fileStorageService;
+    private final UserNotifier userNotifier;
 
+    /** The applicant is always the authenticated user; userId in the form is ignored. */
     @PostMapping(value = "/request", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<Response<ProviderRequest>> requestToBeProvider(@ModelAttribute ProviderRequestDto dto) {
-        Optional<User> userOptional = userRepository.findById(dto.getUserId());
-        if (userOptional.isEmpty()) {
-            return Response.response(null, "No user found with id: " + dto.getUserId(), ResponseType.NOT_FOUND);
+    @Transactional
+    public ResponseEntity<Response<ProviderRequest>> requestToBeProvider(Authentication authentication, @ModelAttribute ProviderRequestDto dto) {
+        User user = currentUserService.user(authentication);
+        if (user.getRole() == Role.ADMIN) {
+            throw ApiException.forbidden("Admins cannot apply to become providers");
         }
-        if (providerRequestRepository.existsByUserId(dto.getUserId())) {
-            return Response.response(null, "A request already exists for this user", ResponseType.ERROR);
+        if (user.getRole() == Role.PROVIDER || providerRepository.findByUserId(user.getId()).isPresent()) {
+            throw ApiException.conflict("This user is already a provider");
         }
-        if (providerRepository.findByUserId(dto.getUserId()).isPresent()) {
-            return Response.response(null, "This user is already a provider", ResponseType.ERROR);
+        if (providerRequestRepository.existsByUserId(user.getId())) {
+            throw ApiException.conflict("A request already exists for this user");
+        }
+        if (dto.getName() == null || dto.getName().trim().isEmpty()) {
+            throw ApiException.badRequest("name is required");
         }
 
         ProviderRequest request = new ProviderRequest();
-        request.setName(dto.getName());
+        request.setName(dto.getName().trim());
         request.setAddress(dto.getAddress());
         request.setPhoneNumber(dto.getPhoneNumber());
-        request.setUser(userOptional.get());
-
+        request.setUser(user);
         if (dto.getServiceIds() != null && !dto.getServiceIds().isEmpty()) {
-            List<Service> services = serviceRepository.findAllById(dto.getServiceIds());
-            if (services.size() != dto.getServiceIds().size()) {
-                return Response.response(null, "One or more service IDs are invalid", ResponseType.NOT_FOUND);
+            List<Long> ids = dto.getServiceIds().stream().distinct().toList();
+            List<Service> services = serviceRepository.findAllById(ids);
+            if (services.size() != ids.size()) {
+                throw ApiException.notFound("One or more service IDs are invalid");
             }
             request.setServices(services);
         }
-
         if (dto.getLinks() != null && !dto.getLinks().isEmpty()) {
             request.setLinks(dto.getLinks());
         }
-
-        try {
-            String uploadDir = System.getProperty("user.dir") + "/" + UPLOAD_DIR;
-            File dir = new File(uploadDir);
-            if (!dir.exists()) {
-                dir.mkdirs();
-            }
-            if (dto.getFrontIdImage() != null && !dto.getFrontIdImage().isEmpty()) {
-                String filename = saveFile(dto.getFrontIdImage(), uploadDir);
-                request.setFrontIdImage(filename);
-            }
-            if (dto.getBackIdImage() != null && !dto.getBackIdImage().isEmpty()) {
-                String filename = saveFile(dto.getBackIdImage(), uploadDir);
-                request.setBackIdImage(filename);
-            }
-            if (dto.getTaxCardFront() != null && !dto.getTaxCardFront().isEmpty()) {
-                String filename = saveFile(dto.getTaxCardFront(), uploadDir);
-                request.setTaxCardFront(filename);
-            }
-            if (dto.getTaxCardBack() != null && !dto.getTaxCardBack().isEmpty()) {
-                String filename = saveFile(dto.getTaxCardBack(), uploadDir);
-                request.setTaxCardBack(filename);
-            }
-        } catch (IOException e) {
-            return Response.response(null, "Failed to upload images: " + e.getMessage(), ResponseType.INTERNAL_SERVER_ERROR);
+        // Verification documents go to the private store, which no public endpoint serves.
+        if (dto.getFrontIdImage() != null && !dto.getFrontIdImage().isEmpty()) {
+            request.setFrontIdImage(fileStorageService.storePrivateImage(dto.getFrontIdImage()));
         }
-
+        if (dto.getBackIdImage() != null && !dto.getBackIdImage().isEmpty()) {
+            request.setBackIdImage(fileStorageService.storePrivateImage(dto.getBackIdImage()));
+        }
+        if (dto.getTaxCardFront() != null && !dto.getTaxCardFront().isEmpty()) {
+            request.setTaxCardFront(fileStorageService.storePrivateImage(dto.getTaxCardFront()));
+        }
+        if (dto.getTaxCardBack() != null && !dto.getTaxCardBack().isEmpty()) {
+            request.setTaxCardBack(fileStorageService.storePrivateImage(dto.getTaxCardBack()));
+        }
         request = providerRequestRepository.save(request);
         return Response.response(request, "Request submitted successfully", ResponseType.SUCCESS);
     }
 
     @GetMapping("/show-all")
-    public ResponseEntity<Response<List<ProviderRequest>>> getAllRequests() {
+    public ResponseEntity<Response<List<ProviderRequest>>> getAllRequests(Authentication authentication) {
+        currentUserService.admin(authentication);
         return Response.response(providerRequestRepository.findAll(), "All provider requests", ResponseType.SUCCESS);
     }
 
+    /** Verification document of a request. type: front-id | back-id | tax-front | tax-back. Admin or the applicant only. */
+    @GetMapping("/{id}/document/{type}")
+    public ResponseEntity<Resource> getDocument(Authentication authentication, @PathVariable Long id, @PathVariable String type) {
+        User caller = currentUserService.user(authentication);
+        ProviderRequest request = providerRequestRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound("No request found with id: " + id));
+        if (!currentUserService.isAdmin(caller) && !request.getUser().getId().equals(caller.getId())) {
+            throw ApiException.forbidden("You are not allowed to access this document");
+        }
+        String filename = switch (type) {
+            case "front-id" -> request.getFrontIdImage();
+            case "back-id" -> request.getBackIdImage();
+            case "tax-front" -> request.getTaxCardFront();
+            case "tax-back" -> request.getTaxCardBack();
+            default -> throw ApiException.badRequest("type must be front-id, back-id, tax-front or tax-back");
+        };
+        if (filename == null) {
+            throw ApiException.notFound("This document was not uploaded");
+        }
+        Resource resource = fileStorageService.loadPrivate(filename);
+        String contentType = null;
+        try {
+            contentType = Files.probeContentType(resource.getFile().toPath());
+        } catch (IOException ignored) {
+            // fall back to octet-stream
+        }
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(contentType == null ? "application/octet-stream" : contentType))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + resource.getFilename() + "\"")
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(resource);
+    }
+
     @PostMapping("/accept/{id}")
+    @Transactional
     public ResponseEntity<Response<Provider>> acceptRequest(Authentication authentication, @PathVariable Long id) {
-        Optional<User> adminOptional = userRepository.findByEmail(authentication.getName());
-        if (adminOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
-        }
-        if (adminOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
-        }
-        Optional<ProviderRequest> requestOptional = providerRequestRepository.findById(id);
-        if (requestOptional.isEmpty()) {
-            return Response.response(null, "No request found with id: " + id, ResponseType.NOT_FOUND);
-        }
-        ProviderRequest providerRequest = requestOptional.get();
+        currentUserService.admin(authentication);
+        ProviderRequest providerRequest = providerRequestRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound("No request found with id: " + id));
         User user = providerRequest.getUser();
+        if (providerRepository.findByUserId(user.getId()).isPresent()) {
+            throw ApiException.conflict("This user is already a provider");
+        }
 
         Provider provider = new Provider();
         provider.setName(providerRequest.getName());
@@ -138,7 +160,6 @@ public class ProviderRequestController {
             provider.setLinks(linkEntities);
             providerRepository.save(provider);
         }
-
         if (providerRequest.getServices() != null) {
             for (Service service : providerRequest.getServices()) {
                 if (service.getProviders() == null) {
@@ -148,111 +169,61 @@ public class ProviderRequestController {
             }
             serviceRepository.saveAll(providerRequest.getServices());
         }
-
         user.setRole(Role.PROVIDER);
         user.setProvider(provider);
         userRepository.save(user);
-
         providerRequestRepository.deleteById(id);
-
-        sendProviderAcceptedNotification(user);
-
+        userNotifier.notify(user, "Provider Request Accepted",
+                "Congratulations! Your provider request has been accepted.", "PROVIDER_ACCEPTED", null);
         return Response.response(provider, "Request accepted, provider created successfully", ResponseType.SUCCESS);
     }
 
-    private void sendProviderAcceptedNotification(User user) {
-        if (user.getFcmToken() == null || user.getFcmToken().isBlank()) return;
-        try {
-            JsonObject body = new JsonObject();
-            body.addProperty("body", "Congratulations! Your provider request has been accepted.");
-            Notification notification = new Notification("Provider Request Accepted", body, "PROVIDER_ACCEPTED", "SENT", user.getId());
-            notificationService.sendNotification(notification);
-        } catch (Exception e) {
-            System.out.println("ProviderRequestController failed to send provider-accepted notification: " + e.getMessage());
-        }
-    }
-
-    private void sendProviderRejectedNotification(User user, String reason) {
-        if (user.getFcmToken() == null || user.getFcmToken().isBlank()) return;
-        try {
-            String message = "Your provider request has been rejected.";
-            if (reason != null && !reason.isBlank()) {
-                message += " Reason: " + reason;
-            }
-            JsonObject body = new JsonObject();
-            body.addProperty("body", message);
-            Notification notification = new Notification("Provider Request Rejected", body, "PROVIDER_REJECTED", "SENT", user.getId());
-            notificationService.sendNotification(notification);
-        } catch (Exception e) {
-            System.out.println("ProviderRequestController failed to send provider-rejected notification: " + e.getMessage());
-        }
-    }
-
     @PostMapping("/reject/{id}")
+    @Transactional
     public ResponseEntity<Response<ProviderRequest>> rejectRequest(Authentication authentication, @PathVariable Long id, @RequestParam(required = false) String reason) {
-        Optional<User> adminOptional = userRepository.findByEmail(authentication.getName());
-        if (adminOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
-        }
-        if (adminOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
-        }
-        Optional<ProviderRequest> requestOptional = providerRequestRepository.findById(id);
-        if (requestOptional.isEmpty()) {
-            return Response.response(null, "No request found with id: " + id, ResponseType.NOT_FOUND);
-        }
-        ProviderRequest providerRequest = requestOptional.get();
+        currentUserService.admin(authentication);
+        ProviderRequest providerRequest = providerRequestRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound("No request found with id: " + id));
         User user = providerRequest.getUser();
         providerRequestRepository.deleteById(id);
-
-        sendProviderRejectedNotification(user, reason);
-
+        String message = "Your provider request has been rejected.";
+        if (reason != null && !reason.isBlank()) {
+            message += " Reason: " + reason;
+        }
+        userNotifier.notify(user, "Provider Request Rejected", message, "PROVIDER_REJECTED", null);
         return Response.response(providerRequest, "Request rejected successfully", ResponseType.SUCCESS);
     }
 
+    /** Admin only: provider -> user. The provider profile is kept. */
     @PostMapping("/put-it-user/{userId}")
-    public ResponseEntity<Response<User>> revertProviderToUser(@PathVariable Long userId) {
-        Optional<User> userOptional = userRepository.findById(userId);
-        if (userOptional.isEmpty()) {
-            return Response.response(null, "No user found with id: " + userId, ResponseType.NOT_FOUND);
-        }
-        User user = userOptional.get();
+    public ResponseEntity<Response<User>> revertProviderToUser(Authentication authentication, @PathVariable Long userId) {
+        currentUserService.admin(authentication);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> ApiException.notFound("No user found with id: " + userId));
         if (user.getRole() != Role.PROVIDER) {
-            return Response.response(null, "User is not a provider", ResponseType.ERROR);
-        }
-        Optional<Provider> providerOptional = providerRepository.findByUserId(userId);
-        if (providerOptional.isPresent()) {
-            userRepository.save(user);
+            throw ApiException.badRequest("User is not a provider");
         }
         user.setRole(Role.USER);
         userRepository.save(user);
         return Response.response(user, "Provider reverted to user successfully", ResponseType.SUCCESS);
     }
 
+    /** Admin only: user -> provider, only if a provider profile already exists for the user. */
     @PostMapping("/put-it-provider/{userId}")
-    public ResponseEntity<Response<User>> revertUserToProvider(@PathVariable Long userId) {
-        Optional<User> userOptional = userRepository.findById(userId);
-        if (userOptional.isEmpty()) {
-            return Response.response(null, "No user found with id: " + userId, ResponseType.NOT_FOUND);
-        }
-        User user = userOptional.get();
+    public ResponseEntity<Response<User>> revertUserToProvider(Authentication authentication, @PathVariable Long userId) {
+        currentUserService.admin(authentication);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> ApiException.notFound("No user found with id: " + userId));
         if (user.getRole() != Role.USER) {
-            return Response.response(null, "User is not a User", ResponseType.ERROR);
+            throw ApiException.badRequest("User is not a User");
         }
-        Optional<Provider> providerOptional = providerRepository.findByUserId(userId);
-        if (providerOptional.isPresent()) {
-            user.setProvider(providerOptional.get());
-            user.setRole(Role.PROVIDER);
-            userRepository.save(user);
-            return Response.response(user, "Provider reverted to user successfully", ResponseType.SUCCESS);
+        Provider provider = providerRepository.findByUserId(userId).orElse(null);
+        if (provider == null) {
+            return Response.response(user, "you can't put it provider because there is no id of provider binding with it", ResponseType.SUCCESS);
         }
-        return Response.response(user, "you can't put it provider because there is no id of provider binding with it", ResponseType.SUCCESS);
-    }
-
-    private String saveFile(MultipartFile file, String uploadDir) throws IOException {
-        String filename = System.currentTimeMillis() + "_" + file.getOriginalFilename();
-        File dest = new File(uploadDir + File.separator + filename);
-        file.transferTo(dest);
-        return filename;
+        user.setProvider(provider);
+        user.setRole(Role.PROVIDER);
+        userRepository.save(user);
+        return Response.response(user, "User promoted to provider successfully", ResponseType.SUCCESS);
     }
 }

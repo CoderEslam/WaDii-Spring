@@ -36,10 +36,10 @@ public class CarTypesController extends Controller<CarType, CarTypesDto, Long> {
     public ResponseEntity<Response<CarType>> insert(Authentication authentication, @RequestBody CarTypesDto carTypesDto) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+            return Response.response(null, "User not exist", ResponseType.UNAUTHORIZED);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(null, "You are not admin to do this action", ResponseType.FORBIDDEN);
         }
         if (carTypesDto.isNotEmpty()) {
             Optional<CarType> carType = carTypeRepository.findByName(carTypesDto.getName());
@@ -60,10 +60,10 @@ public class CarTypesController extends Controller<CarType, CarTypesDto, Long> {
     public ResponseEntity<Response<CarType>> update(Authentication authentication,CarTypesDto carTypesDto) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+            return Response.response(null, "User not exist", ResponseType.UNAUTHORIZED);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(null, "You are not admin to do this action", ResponseType.FORBIDDEN);
         }
         if (carTypesDto.isNotEmpty()) {
             Optional<CarType> carType = carTypeRepository.findById(carTypesDto.getId());
@@ -85,10 +85,10 @@ public class CarTypesController extends Controller<CarType, CarTypesDto, Long> {
     public ResponseEntity<Response<Boolean>> delete(Authentication authentication,Long id) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(false, "User not exist", ResponseType.SUCCESS);
+            return Response.response(false, "User not exist", ResponseType.UNAUTHORIZED);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(false, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(false, "You are not admin to do this action", ResponseType.FORBIDDEN);
         }
         Optional<CarType> carType = carTypeRepository.findById(id);
         if (carType.isPresent()) {

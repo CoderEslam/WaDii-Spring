@@ -44,6 +44,7 @@ public class ChatWebSocketController {
     private final UserRepository userRepository;
     private final ChatContactRepository chatContactRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final com.doubleclick.wadii.service.ChatAccessService chatAccessService;
 
     // ── Send a chat message ───────────────────────────────────────────────────
 
@@ -58,6 +59,15 @@ public class ChatWebSocketController {
         User fromUser = fromUserOpt.get();
         User toUser = toUserOpt.get();
         String type = (payload.getType() != null && !payload.getType().isBlank()) ? payload.getType() : "text";
+        if (payload.getText() == null || payload.getText().isBlank()
+                || !java.util.Set.of("text", "image", "audio").contains(type.toLowerCase())) {
+            sendError(fromUserId, 400, "text must not be blank and type must be text, image or audio");
+            return;
+        }
+        if (!chatAccessService.canCommunicate(fromUserId, toUser.getId())) {
+            sendError(fromUserId, 403, "You can only chat with a user connected to you through an accepted order");
+            return;
+        }
 
         Message message = new Message();
         message.setText(payload.getText());
@@ -79,6 +89,7 @@ public class ChatWebSocketController {
     @MessageMapping("/chat.typing")
     public void typingIndicator(Principal principal, @Payload TypingPayload payload) {
         Long fromUserId = Long.parseLong(principal.getName());
+        if (!chatAccessService.canCommunicate(fromUserId, payload.getToUserId())) return;
         Map<String, Object> event = Map.of(
                 "fromUserId", fromUserId,
                 "typing", payload.isTyping()
@@ -106,6 +117,10 @@ public class ChatWebSocketController {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void sendError(Long userId, int code, String message) {
+        messagingTemplate.convertAndSendToUser(String.valueOf(userId), "/queue/errors", Map.of("code", code, "message", message));
+    }
 
     private void upsertChatContact(User user, User contact, String lastMessage, String messageType) {
         ChatContact chatContact = chatContactRepository

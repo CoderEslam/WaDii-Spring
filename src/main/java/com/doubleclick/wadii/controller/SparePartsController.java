@@ -20,6 +20,7 @@ import java.util.Optional;
 public class SparePartsController extends Controller<SpareParts, SparePartsDto, Long> {
 
     private final SparePartsRepository sparePartsRepository;
+    private final com.doubleclick.wadii.auth.service.CurrentUserService currentUserService;
 
     @Override
     public ResponseEntity<Response<SpareParts>> show(Long id) {
@@ -30,6 +31,7 @@ public class SparePartsController extends Controller<SpareParts, SparePartsDto, 
 
     @Override
     public ResponseEntity<Response<SpareParts>> insert(Authentication authentication, @RequestBody SparePartsDto sparePartsDto) {
+        currentUserService.admin(authentication);
         if (sparePartsDto.isNotEmpty()) {
             SpareParts spareParts = new SpareParts();
             spareParts.setSparePartName(sparePartsDto.getSparePartName());
@@ -42,6 +44,7 @@ public class SparePartsController extends Controller<SpareParts, SparePartsDto, 
 
     @Override
     public ResponseEntity<Response<SpareParts>> update(Authentication authentication, SparePartsDto sparePartsDto) {
+        currentUserService.admin(authentication);
         Optional<SpareParts> sparePartsOptional = sparePartsRepository.findById(sparePartsDto.getId());
         if (sparePartsOptional.isPresent()) {
             if (sparePartsDto.isNotEmpty()) {
@@ -59,6 +62,7 @@ public class SparePartsController extends Controller<SpareParts, SparePartsDto, 
 
     @Override
     public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
+        currentUserService.admin(authentication);
         Optional<SpareParts> spareParts = sparePartsRepository.findById(id);
         if (spareParts.isPresent()) {
             sparePartsRepository.deleteById(id);

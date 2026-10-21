@@ -17,6 +17,7 @@ public class PresenceEventListener {
 
     private final PresenceRegistry registry;
     private final SimpMessagingTemplate messagingTemplate;
+    private final com.doubleclick.wadii.service.ChatAccessService chatAccessService;
 
     @EventListener
     public void onConnect(SessionConnectedEvent event) {
@@ -26,8 +27,7 @@ public class PresenceEventListener {
         String sessionId = sha.getSessionId();
         Long userId = Long.parseLong(user.getName());
         registry.connect(userId, sessionId);
-        messagingTemplate.convertAndSend("/topic/presence",
-                Map.of("userId", userId, "online", true));
+        publish(userId, true);
     }
 
     @EventListener
@@ -39,8 +39,15 @@ public class PresenceEventListener {
         registry.disconnect(sessionId);
         // Only broadcast offline when the user's last session closes
         if (!registry.isOnline(userId)) {
-            messagingTemplate.convertAndSend("/topic/presence",
-                    Map.of("userId", userId, "online", false));
+            publish(userId, false);
+        }
+    }
+
+    /** Presence is only shared with users connected through an accepted order (queue: /user/queue/presence). */
+    private void publish(Long userId, boolean online) {
+        for (Long counterpart : chatAccessService.counterparts(userId)) {
+            messagingTemplate.convertAndSendToUser(String.valueOf(counterpart), "/queue/presence",
+                    Map.of("userId", userId, "online", online));
         }
     }
 }

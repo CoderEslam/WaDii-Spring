@@ -30,6 +30,16 @@ public class Provider {
     @Column(nullable = false)
     private String name;
 
+    // null is treated as true so providers created before these columns existed keep working
+    private Boolean active = true;
+
+    private Boolean acceptingOrders = true;
+
+    @JsonIgnore
+    public boolean isEligibleForOrders() {
+        return !Boolean.FALSE.equals(active) && !Boolean.FALSE.equals(acceptingOrders);
+    }
+
 
     @OneToMany(mappedBy = "provider", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonIgnoreProperties({"provider"})

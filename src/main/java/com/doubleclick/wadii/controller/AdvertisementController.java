@@ -42,6 +42,7 @@ public class AdvertisementController extends Controller<Advertisement, Advertise
                 if (dto.getTitle() == null || dto.getTitle().trim().isEmpty()) {
                     return Response.response(null, "Advertisement title is required", ResponseType.ERROR);
                 }
+                validateSchedule(dto.getStartDate(), dto.getEndDate(), dto.getPriority());
                 Advertisement advertisement = new Advertisement();
                 advertisement.setTitle(dto.getTitle());
                 advertisement.setDescription(dto.getDescription());
@@ -55,10 +56,10 @@ public class AdvertisementController extends Controller<Advertisement, Advertise
                 advertisement = advertisementRepository.save(advertisement);
                 return Response.response(advertisement, "Advertisement created successfully", ResponseType.SUCCESS);
             } else {
-                return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+                return Response.response(null, "You are not admin to do this action", ResponseType.FORBIDDEN);
             }
         } else {
-            return Response.response(null, "User is not exist", ResponseType.SUCCESS);
+            return Response.response(null, "User is not exist", ResponseType.UNAUTHORIZED);
         }
     }
 
@@ -84,13 +85,14 @@ public class AdvertisementController extends Controller<Advertisement, Advertise
                 if (dto.getPriority() != null) advertisement.setPriority(dto.getPriority());
                 if (dto.getStartDate() != null) advertisement.setStartDate(dto.getStartDate());
                 if (dto.getEndDate() != null) advertisement.setEndDate(dto.getEndDate());
+                validateSchedule(advertisement.getStartDate(), advertisement.getEndDate(), advertisement.getPriority());
                 advertisement = advertisementRepository.save(advertisement);
                 return Response.response(advertisement, "Advertisement updated successfully", ResponseType.SUCCESS);
             } else {
-                return Response.response(null, "You are not admin to do this action", ResponseType.SUCCESS);
+                return Response.response(null, "You are not admin to do this action", ResponseType.FORBIDDEN);
             }
         } else {
-            return Response.response(null, "User not exist", ResponseType.SUCCESS);
+            return Response.response(null, "User not exist", ResponseType.UNAUTHORIZED);
         }
     }
 
@@ -98,10 +100,10 @@ public class AdvertisementController extends Controller<Advertisement, Advertise
     public ResponseEntity<Response<Boolean>> delete(Authentication authentication, Long id) {
         Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
         if (userOptional.isEmpty()) {
-            return Response.response(false, "User not exist", ResponseType.SUCCESS);
+            return Response.response(false, "User not exist", ResponseType.UNAUTHORIZED);
         }
         if (userOptional.get().getRole() != Role.ADMIN) {
-            return Response.response(false, "You are not admin to do this action", ResponseType.SUCCESS);
+            return Response.response(false, "You are not admin to do this action", ResponseType.FORBIDDEN);
         }
         if (!advertisementRepository.existsById(id)) {
             return Response.response(false, "No advertisement found with id: " + id, ResponseType.NOT_FOUND);
@@ -112,7 +114,25 @@ public class AdvertisementController extends Controller<Advertisement, Advertise
 
     @Override
     public ResponseEntity<Response<List<Advertisement>>> readAll() {
-        return Response.response(advertisementRepository.findAllByOrderByPriorityDesc(), "All advertisements", ResponseType.SUCCESS);
+        return Response.response(advertisementRepository.findActiveAdvertisements(LocalDateTime.now()), "All advertisements", ResponseType.SUCCESS);
+    }
+
+    @PutMapping("/status/{id}/{status}")
+    public ResponseEntity<Response<Advertisement>> changeStatus(Authentication authentication, @PathVariable Long id, @PathVariable AdvertisementStatus status) {
+        Optional<User> userOptional = userRepository.findByEmail(authentication.getName());
+        if (userOptional.isEmpty()) {
+            return Response.response(null, "User not exist", ResponseType.UNAUTHORIZED);
+        }
+        if (userOptional.get().getRole() != Role.ADMIN) {
+            return Response.response(null, "You are not admin to do this action", ResponseType.FORBIDDEN);
+        }
+        Optional<Advertisement> optional = advertisementRepository.findById(id);
+        if (optional.isEmpty()) {
+            return Response.response(null, "No advertisement found with id: " + id, ResponseType.NOT_FOUND);
+        }
+        Advertisement advertisement = optional.get();
+        advertisement.setStatus(status);
+        return Response.response(advertisementRepository.save(advertisement), "Advertisement status updated", ResponseType.SUCCESS);
     }
 
     @GetMapping("/by-status/{status}")
@@ -140,6 +160,15 @@ public class AdvertisementController extends Controller<Advertisement, Advertise
         advertisement.setImpressions(advertisement.getImpressions() + 1);
         advertisement = advertisementRepository.save(advertisement);
         return Response.response(advertisement, "Impression tracked", ResponseType.SUCCESS);
+    }
+
+    private void validateSchedule(LocalDateTime start, LocalDateTime end, Integer priority) {
+        if (start != null && end != null && start.isAfter(end)) {
+            throw com.doubleclick.wadii.exception.ApiException.badRequest("startDate must not be after endDate");
+        }
+        if (priority != null && priority < 0) {
+            throw com.doubleclick.wadii.exception.ApiException.badRequest("priority must be zero or greater");
+        }
     }
 
     @PostMapping("/track-click/{id}")
