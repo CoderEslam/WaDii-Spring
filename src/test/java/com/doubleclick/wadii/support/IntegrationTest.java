@@ -19,7 +19,7 @@ import java.io.UncheckedIOException;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Import(TestClockConfig.class)
+@Import({TestClockConfig.class, TestApi.class})
 public abstract class IntegrationTest {
 
     private static final EmbeddedPostgres POSTGRES = start();
