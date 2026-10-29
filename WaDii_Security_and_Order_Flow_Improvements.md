@@ -1,909 +1,219 @@
-# WaDii – Security & Order/Response System Improvements
+# WaDii Backend — Full Re-Architecture, Business Rules, Database & API Implementation
 
-## Purpose
+You are working on the backend of **WaDii**, a car-services marketplace.
 
-This document defines the backend changes required to make WaDii safer and to implement the intended production business flow for:
+The application is **NOT in production yet**.
 
-- Authentication and authorization
-- User/provider/admin permissions
-- Ownership checks
-- Secure order creation
-- Provider targeting
-- Service-based order distribution
-- Provider responses/offers
-- Accepting exactly one provider response
-- Declining all other responses without deleting them
-- Notifications
-- Chat/call access after an accepted response
-- Data privacy and API response security
-- Concurrency and transactional consistency
+This is extremely important:
 
-The goal is to preserve the current WaDii business idea while making the backend secure, predictable, and production-ready.
+> You are explicitly allowed to redesign the database and backend architecture from scratch where necessary.
+>
+> Do NOT preserve legacy database structures, entities, endpoints, or business logic merely for backward compatibility if they conflict with the new requirements.
+>
+> Preserve the business requirements, not the old implementation mistakes.
+
+Your job is to fully review the existing backend and then implement the final business architecture described below.
 
 ---
 
-# 1. Target Business Flow
+# 1. FIRST: REVIEW THE EXISTING PROJECT
 
-## 1.1 Customer creates an order
+Before changing code, inspect the entire backend project.
 
-A customer creates an order containing:
+You must understand:
 
-- Car type/model
-- Car year
-- Comment/description
-- Requested date
-- Location
-- Requested services
-- Optional spare parts
-- Optional target provider
+- existing entities
+- repositories
+- services
+- controllers
+- DTOs
+- security configuration
+- JWT implementation
+- database configuration
+- relationships
+- WebSocket implementation
+- notifications
+- file upload system
+- provider system
+- order system
+- response/offer system
+- advertisements
+- authentication
+- authorization
+- scheduled jobs
+- existing tests
+- existing API behavior
 
-The backend MUST NOT trust the `userId` sent by the client.
-
-The owner must always come from the authenticated JWT.
+Also inspect:
 
 ```text
-JWT
- ↓
-authenticatedUserId
- ↓
-Order.userId = authenticatedUserId
+API_REFERENCE.md
+APP_GUIDE_BY_ROLE.md
 ```
 
-Never:
+These documents describe the current application and must be treated as important input for understanding the existing system.
 
-```text
-request.userId → Order.userId
-```
+However:
+
+> Existing documentation is NOT necessarily correct.
+
+The final implemented backend and the new business rules in this prompt are the source of truth.
 
 ---
 
-# 2. Order Targeting Rules
+# 2. DO NOT PATCH THE OLD ARCHITECTURE BLINDLY
 
-An order can be targeted in two ways.
+Do not simply add random fields to existing entities.
 
-## 2.1 Customer selected a specific provider
+First determine whether the existing model is still appropriate.
 
-If the customer explicitly selects a provider:
+If an entity is badly designed, replace it.
 
-```text
-Order
- ├── userId = current authenticated user
- ├── providerId = selected provider
- └── services = requested services
-```
+If a relationship is incorrect, redesign it.
 
-The backend must validate:
+If an endpoint violates security rules, redesign its implementation.
 
-1. The provider exists.
-2. The provider account is actually a `PROVIDER`.
-3. The provider is active/approved.
-4. The provider is allowed to receive new orders.
-5. The provider offers the requested service(s), if this is a business requirement.
-
-Then:
-
-```text
-Order
- ↓
-Selected Provider
- ↓
-ORDER_RECEIVED notification
-```
-
-The order must NOT be broadcast to unrelated providers.
+If the current database schema is no longer appropriate, recreate it.
 
 ---
 
-## 2.2 Customer does NOT select a provider
+# 3. DATABASE CAN BE RECREATED FROM SCRATCH
 
-If no provider is selected, the backend finds eligible providers based on the requested services.
+Because WaDii has not reached production:
 
-Example:
+You are allowed to:
 
-```text
-Requested services:
-- Service ID 1
-- Service ID 2
-```
+- drop existing development tables
+- recreate the database schema
+- remove obsolete tables
+- rename entities/tables
+- redesign relationships
+- add proper foreign keys
+- add unique constraints
+- add indexes
+- add audit tables
+- add new business entities
 
-The system should target providers who offer the requested service set.
+Do NOT waste time maintaining backward compatibility with an obsolete schema.
 
-### Recommended rule
-
-A provider must offer **all requested services**.
-
-Example:
-
-```text
-Provider A → Service 1 + Service 2     ✅
-Provider B → Service 1                 ❌
-Provider C → Service 2                 ❌
-Provider D → Service 1 + Service 2     ✅
-```
-
-So the order is sent to:
-
-```text
-Provider A
-Provider D
-```
-
-This avoids sending an order to a provider who cannot perform the complete requested job.
-
-### Important
-
-The backend must perform this filtering.
-
-The mobile/web application must NOT decide which providers are eligible.
+The new database must represent the final business model cleanly.
 
 ---
 
-# 3. Provider Notification
+# 4. DATABASE PRINCIPLES
 
-When an order is created:
+Use proper relational design.
 
-## Direct provider order
+Important principles:
 
-```text
-Customer
-   ↓
-Create Order
-   ↓
-Selected Provider
-   ↓
-Push Notification
-   ↓
-Provider sees Order
-```
-
-## Service-based order
-
-```text
-Customer
-   ↓
-Create Order
-   ↓
-Find eligible providers
-   ↓
-Provider 1 ─┐
-Provider 2 ─┤
-Provider 3 ─┤
-             └── Push notifications
-```
-
-Notifications should contain enough information to identify the order but should not expose sensitive user information.
-
-Recommended notification type:
-
-```text
-NEW_ORDER
-```
+- Foreign keys where appropriate
+- Unique constraints
+- Indexes for frequently queried fields
+- Proper nullable/non-nullable definitions
+- Transaction-safe operations
+- Optimistic/pessimistic locking where necessary
+- Decimal types for money
+- UTC timestamps internally
+- No floating-point money
+- No duplicated ownership information unless justified
+- Soft deletion only where business history requires it
 
 ---
 
-# 4. Order Visibility
+# 5. ROLES
 
-Providers must only see orders that they are eligible to respond to.
-
-A provider must NOT be able to access arbitrary orders by changing an ID.
-
-For example:
-
-```http
-GET /orders/{orderId}
-```
-
-must verify:
+Current roles:
 
 ```text
-currentUser is:
-    order owner
-OR
-    targeted provider
-OR
-    authorized admin
+USER = 0
+PROVIDER = 1
+ADMIN = 2
 ```
 
-A provider who was not targeted by an order must receive:
+Preserve compatibility with the existing role system if necessary, but internally design authorization cleanly.
 
-```http
-403 Forbidden
+Future administrative permissions should support:
+
+```text
+SUPER_ADMIN
+SUPPORT_ADMIN
+CONTENT_ADMIN
+FINANCE_ADMIN
 ```
 
-or, if hiding resource existence is preferred:
+Do not rely only on:
 
-```http
-404 Not Found
+```text
+role == ADMIN
 ```
+
+for sensitive operations.
 
 ---
 
-# 5. Provider Response / Offer
+# 6. AUTHENTICATION SECURITY
 
-Each provider can submit one response for an eligible order.
+JWT is the source of authenticated identity.
 
-Example:
-
-```text
-Order #100
-Requested:
-- Service 1
-- Service 2
-```
-
-Responses:
+Never trust these values from the client for authorization:
 
 ```text
-Provider A → 4,000 EGP
-Provider B → 4,100 EGP
-Provider C → 4,500 EGP
-```
-
-Each response contains:
-
-- Response ID
-- Order ID
-- Provider ID
-- Comment
-- Location
-- Spare-part prices
-- Total price
-- Status
-- Created date
-- Updated date
-
----
-
-# 6. Response Status
-
-Responses should NOT be deleted when another response is accepted.
-
-Recommended lifecycle:
-
-```text
-PENDING
-   │
-   ├── Customer accepts
-   │       ↓
-   │    ACCEPTED
-   │
-   └── Customer chooses another response
-           ↓
-        DECLINED
-```
-
-Possible statuses:
-
-```text
-PENDING
-ACCEPTED
-DECLINED
-CANCELED
-```
-
-The exact final list can be simplified if `CANCELED` is not needed.
-
----
-
-# 7. Accepting a Response
-
-This is one of the most important operations in the system.
-
-When the customer accepts response `R1`:
-
-```text
-Order #100
-
-Response A → ACCEPTED
-Response B → DECLINED
-Response C → DECLINED
-Response D → DECLINED
-```
-
-Only ONE response can ever be `ACCEPTED`.
-
-The backend must verify:
-
-1. The current user owns the order.
-2. The response belongs to the order.
-3. The response is currently `PENDING`.
-4. The order is still open.
-5. No other response has already been accepted.
-
----
-
-# 8. Atomic Acceptance
-
-Accepting a response must be handled as a database transaction.
-
-Conceptually:
-
-```text
-BEGIN TRANSACTION
-
-1. Lock the order
-2. Verify order owner
-3. Verify order is still open
-4. Verify selected response belongs to order
-5. Verify selected response is PENDING
-6. Set selected response = ACCEPTED
-7. Set all other PENDING responses = DECLINED
-8. Set order = ACCEPTED
-9. Store selected provider on the order
-10. Create notification for provider
-
-COMMIT
-```
-
-If anything fails:
-
-```text
-ROLLBACK
-```
-
-This prevents two requests from accepting two different responses at the same time.
-
----
-
-# 9. Order Status
-
-The current order status is too limited for the complete business flow.
-
-Recommended lifecycle:
-
-```text
-PENDING
-   ↓
-RESPONSES_AVAILABLE
-   ↓
-ACCEPTED
-   ↓
-IN_PROGRESS
-   ↓
-COMPLETED
-```
-
-Alternative cancellation path:
-
-```text
-PENDING ─────→ CANCELED
-RESPONSES_AVAILABLE ─→ CANCELED
-ACCEPTED ────────────→ CANCELED
-```
-
-If the backend wants to keep the existing simple statuses, at minimum add:
-
-```text
-PENDING
-ACCEPTED
-CANCELED
-COMPLETED
-```
-
-The important point is that the order must clearly know whether it already has a winning provider.
-
----
-
-# 10. Store the Winning Provider on the Order
-
-After acceptance, the order should store:
-
-```text
-acceptedProviderId
-```
-
-or an equivalent relation.
-
-Example:
-
-```text
-Order
- ├── userId
- ├── acceptedProviderId
- ├── status = ACCEPTED
- └── acceptedResponseId
-```
-
-This makes later authorization much easier.
-
-After acceptance:
-
-```text
-Customer ↔ Accepted Provider
-```
-
-becomes the official service relationship for that order.
-
----
-
-# 11. Notification After Acceptance
-
-When the customer accepts Provider A:
-
-```text
-Provider A
-    ↓
-RESPONSE_ACCEPTED
-```
-
-Notification example:
-
-```text
-"Your offer for order #100 was accepted."
-```
-
-Providers B/C/D receive:
-
-```text
-RESPONSE_DECLINED
-```
-
-or a more generic:
-
-```text
-ORDER_RESPONSE_NOT_SELECTED
-```
-
-The notification should not expose unnecessary customer information.
-
----
-
-# 12. Chat Access After Acceptance
-
-Before acceptance, the customer and provider may have limited communication according to the business rules.
-
-Recommended secure rule:
-
-```text
-Customer
-   ↕
-Accepted Provider
-```
-
-After acceptance, allow:
-
-- Chat
-- Call
-- Presence
-- Shared order context
-
-The backend should verify that the two users are actually connected through an accepted order.
-
-Do NOT rely only on:
-
-```text
-userId + userId
-```
-
-sent by the client.
-
-The server should verify the relationship.
-
----
-
-# 13. Call Authorization
-
-For Agora/LiveKit token generation:
-
-The backend must verify that the caller is authorized to communicate with the target user.
-
-Recommended:
-
-```text
-currentUser
-    ↓
-Is there an accepted order connecting both users?
-    ↓
-YES → issue call token
-NO  → reject
-```
-
-Do not allow any authenticated user to generate a call token for arbitrary users unless open calling is explicitly part of the product requirements.
-
----
-
-# 14. Order Cancellation
-
-Only the order owner can cancel an order.
-
-```text
-JWT user
-   ↓
-order.userId == JWT user ID?
-   ↓
-YES → cancel
-NO  → 403
-```
-
-Recommended rule:
-
-An order cannot be canceled after completion.
-
-For an accepted order, define whether cancellation is allowed and what happens to the accepted response.
-
----
-
-# 15. Provider Response Authorization
-
-Before creating a response:
-
-```text
-currentUser.role == PROVIDER
-```
-
-AND:
-
-```text
-currentProvider.id == response.providerId
-```
-
-The client must NOT be allowed to submit:
-
-```json
-{
-  "providerId": 999
-}
-```
-
-and act as another provider.
-
-The server should derive the provider from the authenticated account.
-
-Recommended:
-
-```text
-JWT
- ↓
-User
- ↓
-Provider profile
- ↓
-response.providerId
-```
-
-not:
-
-```text
-request.providerId
-```
-
----
-
-# 16. Provider Eligibility
-
-Before a provider responds to an order, verify:
-
-1. Provider exists.
-2. Provider is active.
-3. Provider is approved.
-4. Provider owns/offers the required services.
-5. Provider was targeted by the order.
-6. Order is still open.
-7. Provider has not already submitted a response.
-8. Provider is not blocked/suspended.
-
----
-
-# 17. Prevent Duplicate Responses
-
-A provider should normally have only one active response per order.
-
-Recommended database constraint:
-
-```text
-UNIQUE(order_id, provider_id)
-```
-
-This is better than relying only on frontend checks.
-
----
-
-# 18. Ownership Security
-
-All resources must verify ownership on the server.
-
-## User resources
-
-A normal user can modify:
-
-```text
-own profile
-own images
-own orders
-own responses/actions where applicable
-own ratings
-own saved offers
-own notifications
-```
-
-They cannot modify another user's resources by changing an ID.
-
----
-
-# 19. Provider Ownership
-
-A provider can modify:
-
-```text
-own provider profile
-own services
-own branches
-own work times
-own links
-own offers
-own responses
-```
-
-A provider must not be able to update another provider by changing:
-
-```text
+userId
 providerId
+role
+ownerId
 ```
 
-in the request.
+The backend must derive identity from JWT.
 
-The backend must compare the resource owner with the authenticated provider.
-
----
-
-# 20. Rating Security
-
-When creating a rating:
-
-Do NOT trust:
-
-```json
-{
-  "userId": 123
-}
-```
-
-Instead:
+Example:
 
 ```text
-JWT → currentUserId
-```
-
-The server should also verify that the user is allowed to rate the provider.
-
-Recommended rule:
-
-```text
-User
+JWT
  ↓
-has completed/accepted service with provider?
+Authenticated User
  ↓
-YES → can rate
-NO  → reject
+Provider Profile
+ ↓
+Authorized Resource
 ```
 
-Also consider:
-
-```text
-UNIQUE(user_id, provider_id, order_id)
-```
-
-to prevent duplicate ratings.
+A request containing another user's ID must never allow access to that user's resources.
 
 ---
 
-# 21. Admin Registration Must Be Disabled
+# 7. ADMIN REGISTRATION
 
-Current behavior allows:
+Public users must NOT be able to create ADMIN accounts.
 
-```text
-userType = 2
-```
-
-during public registration.
-
-This must be removed.
-
-Public registration should allow only:
+Remove/disable any public flow equivalent to:
 
 ```text
-USER
-PROVIDER
+register(userType = ADMIN)
 ```
 
-If direct provider registration is still desired, it can remain:
-
-```text
-userType = PROVIDER
-```
-
-but admin registration must be controlled.
-
-Admins should be created through:
-
-- Secure database migration
-- Existing trusted admin
-- Internal admin creation endpoint
-- Deployment/bootstrap process
-
-Never through public registration.
+Administrative accounts must be created through a controlled administrative process.
 
 ---
 
-# 22. Admin Endpoint Authorization
+# 8. PASSWORD SECURITY
 
-Every admin-only endpoint must explicitly require:
+Passwords must:
 
-```text
-ROLE_ADMIN
-```
+- be hashed using BCrypt or Argon2
+- never be stored as plaintext
+- never be returned in API responses
+- never be included in DTOs
 
-Examples:
+Audit existing endpoints that create users.
 
-```text
-/users/insert
-/users/show-all
-/users/update
-/users/delete
-
-/provider-requests/show-all
-/provider-requests/accept
-/provider-requests/reject
-
-/services/insert
-/services/update
-/services/delete
-
-/car-types/*
-/common-spare-parts/*
-/advertisements/*
-```
-
-Do not rely on frontend hiding buttons.
-
-The backend must enforce it.
+If any endpoint currently stores a raw password, fix it.
 
 ---
 
-# 23. Provider Request Security
+# 9. HTTP STATUS CODES
 
-Provider requests must be protected.
-
-A normal user can create:
-
-```text
-POST /provider-requests/request
-```
-
-but cannot:
-
-```text
-GET /provider-requests/show-all
-POST /provider-requests/accept/*
-POST /provider-requests/reject/*
-```
-
-unless they are an admin.
-
-Also:
-
-```text
-One pending request per user
-```
-
-must be enforced by the database.
-
----
-
-# 24. Role Change Security
-
-Endpoints such as:
-
-```text
-put-it-user
-put-it-provider
-```
-
-must be admin-only.
-
-The affected user ID may come from the request, but the authorization must come from:
-
-```text
-JWT → ADMIN
-```
-
-A provider or normal user must never be able to change their own role through a public endpoint.
-
----
-
-# 25. Sensitive User Data
-
-Never return passwords from normal API responses.
-
-Even hashed passwords should not be exposed.
-
-User DTOs should contain only safe fields.
-
-For example:
-
-```text
-UserResponse
- ├── id
- ├── name
- ├── email
- ├── phone
- ├── role
- ├── profileImage
- ├── backgroundImage
- └── ...
-```
-
-Do NOT return:
-
-```text
-password
-```
-
-Tokens should also only be returned when necessary, normally during authentication/refresh flows.
-
----
-
-# 26. Password Handling
-
-Passwords must always be:
-
-```text
-hashed
-```
-
-using a modern password hashing algorithm such as:
-
-```text
-BCrypt
-```
-
-or:
-
-```text
-Argon2
-```
-
-Never store plaintext passwords.
-
-Admin-created users must also receive a valid hashed password.
-
-The current behavior where `/users/insert` may store a raw password must be fixed.
-
----
-
-# 27. JWT Security
-
-JWT must be validated on every protected request.
-
-Validate:
-
-- Signature
-- Expiration
-- User existence
-- Account status
-- Role where required
-
-Do not trust role values sent by the client.
-
-Never accept:
-
-```json
-{
-  "role": "ADMIN"
-}
-```
-
-as authorization input.
-
-Authorization must come from the authenticated server-side user.
-
----
-
-# 28. HTTP Status Codes
-
-Do not return HTTP 200 for authorization failures.
-
-Recommended:
+Use correct HTTP semantics.
 
 ```text
 400 Bad Request
@@ -915,500 +225,274 @@ Recommended:
 500 Internal Server Error
 ```
 
-Example:
-
-```text
-Provider tries to accept another user's response
-→ 403 Forbidden
-```
-
-Example:
-
-```text
-Provider submits duplicate response
-→ 409 Conflict
-```
+Do not return HTTP 200 for authorization failures.
 
 ---
 
-# 29. Validation
+# 10. CORE DOMAIN MODEL
 
-Every request must be validated on the backend.
-
-Examples:
-
-```text
-serviceIds must not be empty
-price >= 0
-date must be valid
-phone must be valid
-email must be valid
-required IDs must exist
-```
-
-Never trust frontend validation.
-
----
-
-# 30. Price Security
-
-Provider prices must be validated.
-
-Recommended:
-
-```text
-price >= 0
-```
-
-Use decimal-safe database types for money.
-
-Prefer:
-
-```text
-DECIMAL
-```
-
-instead of floating point.
-
-Never use floating-point arithmetic for financial calculations.
-
----
-
-# 31. Total Response Price
-
-The backend should calculate the total response price where possible.
-
-Do not blindly trust:
-
-```text
-clientTotalPrice
-```
-
-Instead:
-
-```text
-spare part prices
-+
-service price
-+
-other defined costs
-=
-server calculated total
-```
-
-If the business model does not have service-level pricing, clearly define how the total is calculated.
-
----
-
-# 32. Notification Reliability
-
-Notifications should be stored in the database before/around push delivery.
-
-Recommended:
-
-```text
-Business event
-   ↓
-Create notification record
-   ↓
-Send FCM push
-```
-
-If FCM fails:
-
-```text
-Notification remains in inbox
-```
-
-so the user does not lose the event.
-
----
-
-# 33. FCM Token Security
-
-The FCM token belongs to the authenticated user.
-
-The backend should update:
-
-```text
-currentUser.fcmToken
-```
-
-and never allow a user to modify another user's token.
-
-If multiple devices are supported, consider:
+The target architecture should be conceptually close to:
 
 ```text
 User
- └── DeviceTokens
-      ├── device A
-      ├── device B
-      └── device C
-```
 
-instead of storing only one token.
+Provider
+ ├── ProviderBranch
+ ├── ProviderService
+ ├── ProviderPolicy
+ ├── ProviderPolicyVersion
+ ├── ProviderPaymentInformation
+ └── ProviderSubscription
 
----
-
-# 34. Advertisement Security
-
-Advertisement management must be admin-only.
-
-Public users can:
-
-```text
-GET /advertisements/show-all
-POST /track-impression
-POST /track-click
-```
-
-but cannot create/update/delete advertisements.
-
-Validate:
-
-```text
-startDate <= endDate
-priority >= 0
-status ∈ ACTIVE, INACTIVE, EXPIRED
-```
-
----
-
-# 35. File Upload Security
-
-Profile images, provider documents, and other uploads must be protected.
-
-Validate:
-
-- File size
-- MIME type
-- File extension
-- Filename
-- Content type
-
-Do not trust the filename supplied by the client.
-
-Generate server-side filenames.
-
-Example:
-
-```text
-UUID + safe extension
-```
-
-Provider ID/tax documents should NOT be publicly accessible.
-
----
-
-# 36. Provider Application Documents
-
-ID/tax-card images are sensitive.
-
-They should be accessible only to:
-
-```text
-ADMIN
-```
-
-and the owning user where required.
-
-Do NOT expose them through a public:
-
-```text
-GET /users/{filename}
-```
-
-style endpoint.
-
-Public profile images can be public if required, but verification documents must be private.
-
----
-
-# 37. Search Security
-
-Search endpoints can remain public/authenticated according to product requirements.
-
-However:
-
-- Sanitize input
-- Use parameterized queries
-- Limit result size
-- Add pagination
-- Avoid exposing internal database fields
-
-Never concatenate raw search input into SQL.
-
----
-
-# 38. Pagination
-
-Large endpoints should use pagination.
-
-Especially:
-
-```text
-/providers/show-all
-/orders/show-all
-/responses/show-all
-/messages/chat-list
-/notifications/my
-/advertisements/*
-/users/show-all
-```
-
-Example:
-
-```text
-page=0
-size=20
-```
-
-Also enforce a maximum:
-
-```text
-size <= 100
-```
-
----
-
-# 39. Database Constraints
-
-Important business rules should be protected by database constraints, not only Java/Kotlin code.
-
-Recommended constraints include:
-
-```text
-unique user.email
-unique user.phone where appropriate
-unique(order_id, provider_id)
-one pending provider request per user
-valid foreign keys
-non-null required fields
-```
-
----
-
-# 40. Transactional Business Operations
-
-Use database transactions for operations involving multiple records.
-
-Especially:
-
-### Accept response
-
-```text
 Order
-+
-Selected Response
-+
-Other Responses
-+
+ ├── OrderProviderTarget
+ ├── OrderAttachment
+ ├── OrderTimeline
+ ├── Appointment
+ ├── Response / Offer
+ ├── Payment
+ │    ├── PaymentAttempt
+ │    ├── PaymentProof
+ │    └── Refund
+ ├── AdditionalCharge
+ ├── Dispute
+ │    └── DisputeEvidence
+ └── Invoice
+
+Conversation
+ └── Message
+
 Notification
+
+Rating
+SavedOffer
+Follow
+
+Advertisement
+AdvertisementAnalytics
+
+AuditLog
 ```
 
-### Provider approval
-
-```text
-Provider Request
-+
-User Role
-+
-Provider Profile
-+
-Notification
-```
-
-### Order cancellation
-
-```text
-Order
-+
-Related responses
-+
-Notifications
-```
-
-This prevents partially completed operations.
+You may improve this model if your analysis identifies a better relational design.
 
 ---
 
-# 41. Concurrency Protection
+# 11. PROVIDER
 
-The accept-response endpoint is especially sensitive.
+A Provider is a user account plus a business profile.
 
-Scenario:
+Provider should support:
 
-```text
-Customer taps Provider A
-Customer taps Provider B
-```
+- profile
+- branches
+- services
+- work times
+- links
+- offers
+- ratings
+- followers
+- verification
+- reliability
+- payment receiving information
+- policies
+- analytics
 
-almost simultaneously.
-
-The server must guarantee:
-
-```text
-Only A OR B
-```
-
-can become accepted.
-
-Never allow:
-
-```text
-A = ACCEPTED
-B = ACCEPTED
-```
-
-Use one or more of:
-
-- Database row locking
-- Optimistic locking
-- Transaction
-- Unique constraint
-- Conditional update
-
-Recommended implementation:
+Provider verification states:
 
 ```text
-@Transactional
-+
-lock order
-+
-verify status
-+
-accept one response
-+
-decline remaining responses
+PENDING
+VERIFIED
+REJECTED
+SUSPENDED
 ```
+
+Only eligible providers should receive/respond to new orders.
 
 ---
 
-# 42. Response History Must Be Preserved
+# 12. PROVIDER BRANCHES
 
-Do not delete responses after another response wins.
+A provider may have multiple branches.
+
+Each branch may contain:
+
+```text
+name
+address
+latitude
+longitude
+phone
+working hours
+active status
+```
+
+The system should be able to determine the nearest eligible branch.
+
+---
+
+# 13. PROVIDER SERVICES
+
+Providers define which services they offer.
+
+An order can request multiple services.
+
+IMPORTANT:
+
+If an order requests:
+
+```text
+Service 1
+Service 2
+```
+
+the automatic matching rule is:
+
+```text
+Provider must offer Service 1 AND Service 2
+```
+
+Not:
+
+```text
+Service 1 OR Service 2
+```
 
 Example:
 
 ```text
-Provider A → ACCEPTED
-Provider B → DECLINED
-Provider C → DECLINED
-```
-
-This gives the platform historical information.
-
-It also helps with:
-
-- Analytics
-- Customer support
-- Dispute handling
-- Provider statistics
-- Admin auditing
-
----
-
-# 43. Audit Log
-
-For important actions, introduce an audit log.
-
-Examples:
-
-```text
-ORDER_CREATED
-ORDER_CANCELED
-RESPONSE_CREATED
-RESPONSE_UPDATED
-RESPONSE_ACCEPTED
-RESPONSE_DECLINED
-PROVIDER_APPROVED
-PROVIDER_REJECTED
-USER_ROLE_CHANGED
-ADVERTISEMENT_CREATED
-ADVERTISEMENT_STATUS_CHANGED
-```
-
-Audit record:
-
-```text
-actorUserId
-action
-entityType
-entityId
-timestamp
-metadata
-```
-
-Do not store sensitive data unnecessarily.
-
----
-
-# 44. Provider Order Matching
-
-Recommended matching service:
-
-```text
-OrderMatchingService
-```
-
-Responsibilities:
-
-1. Receive created order.
-2. Determine whether provider was explicitly selected.
-3. If yes → target selected provider.
-4. If no → find providers offering all requested services.
-5. Exclude inactive/suspended providers.
-6. Create order-target records if needed.
-7. Send notifications.
-
-Conceptually:
-
-```text
-createOrder()
-      ↓
-OrderMatchingService
-      ↓
- ┌───────────────┐
- │ providerId?   │
- └───────┬───────┘
-         │
-    ┌────┴────┐
-   YES       NO
-    │         │
-    ▼         ▼
-Target     Match services
-one        against providers
-provider       │
-               ▼
-         eligible providers
-               │
-               ▼
-          notifications
+Provider A -> 1 + 2 -> eligible
+Provider B -> 1     -> not eligible
+Provider C -> 2     -> not eligible
 ```
 
 ---
 
-# 45. Recommended Order Target Table
+# 14. ORDER CREATION
 
-For better scalability, consider introducing:
+Customer creates an order.
+
+The backend must derive:
 
 ```text
-order_provider_targets
+customerId
 ```
 
-Example:
+from JWT.
+
+Never trust:
+
+```json
+{
+  "userId": "..."
+}
+```
+
+for ownership.
+
+Order should support:
+
+- car information
+- requested services
+- requested date
+- location
+- latitude
+- longitude
+- customer comment
+- attachments
+- optional selected provider
+
+---
+
+# 15. ORDER STATUS
+
+Use a formal state machine.
+
+Recommended:
+
+```text
+CREATED
+MATCHING
+QUOTING
+RESPONSES_AVAILABLE
+ACCEPTED
+IN_PROGRESS
+COMPLETED
+CANCELED
+EXPIRED
+```
+
+Do NOT use:
+
+```text
+PAID
+```
+
+as an Order status.
+
+Payment is a separate domain.
+
+---
+
+# 16. PROVIDER SELECTION
+
+There are two modes.
+
+## Explicit Provider
+
+If customer explicitly selects a provider:
+
+```text
+Order -> selected provider only
+```
+
+Do not notify unrelated providers.
+
+The backend must validate that provider is:
+
+- active
+- verified
+- eligible
+- capable of requested services
+
+## Automatic Matching
+
+If customer does not select a provider:
+
+Find eligible providers according to:
+
+- all requested services
+- active status
+- verification
+- branch/service area
+- distance
+- availability
+
+---
+
+# 17. ORDER PROVIDER TARGET
+
+Create a dedicated concept such as:
+
+```text
+OrderProviderTarget
+```
+
+Suggested fields:
 
 ```text
 id
-order_id
-provider_id
+orderId
+providerId
 status
-notified_at
-viewed_at
-responded_at
+notifiedAt
+viewedAt
+respondedAt
+createdAt
+updatedAt
 ```
 
-Status could be:
+Statuses:
 
 ```text
 TARGETED
@@ -1418,575 +502,2048 @@ DECLINED
 EXPIRED
 ```
 
-This gives the system a clear relationship between an order and the providers who were invited.
-
-It also makes it easier to answer:
-
-- Which providers received the order?
-- Which providers viewed it?
-- Which providers responded?
-- Which providers ignored it?
+This is important for analytics and provider matching.
 
 ---
 
-# 46. Response Expiration
+# 18. PROVIDER RANKING
 
-Consider adding a response expiration time.
+Support ranking providers using:
+
+- service compatibility
+- distance
+- rating
+- number of ratings
+- completed orders
+- response time
+- cancellation rate
+- verified status
+- reliability score
+- nearest branch
+- availability
+
+Customer sorting:
+
+```text
+RECOMMENDED
+LOWEST_PRICE
+HIGHEST_RATED
+NEAREST
+FASTEST_RESPONSE
+```
+
+Do not expose sensitive internal ranking calculations unnecessarily.
+
+---
+
+# 19. ORDER RESPONSE WINDOW
+
+An Order should have an overall response deadline.
+
+Recommended initial configuration:
+
+```text
+48 hours
+```
+
+After the order response deadline:
+
+- no new offers
+- pending offers expire
+- order may become EXPIRED if no offer was accepted
+
+This is separate from individual offer expiration.
+
+---
+
+# 20. RESPONSE / OFFER
+
+A provider response represents an offer.
+
+Recommended fields:
+
+```text
+id
+orderId
+providerId
+price
+currency
+description
+estimatedDuration
+expiresAt
+status
+createdAt
+updatedAt
+```
+
+Potential future fields:
+
+```text
+discount
+partsCost
+laborCost
+tax
+notes
+```
+
+---
+
+# 21. ONE RESPONSE PER PROVIDER PER ORDER
+
+Enforce:
+
+```text
+UNIQUE(order_id, provider_id)
+```
+
+A provider cannot submit multiple responses for the same order unless a future negotiation/versioning system is explicitly introduced.
+
+---
+
+# 22. OFFER EXPIRATION
+
+Every offer MUST have:
+
+```text
+expiresAt
+```
+
+Recommended defaults:
+
+```text
+Default: 48 hours
+Minimum: 1 hour
+Maximum: 7 days
+```
+
+These should be configurable.
+
+Creation validation:
+
+```text
+expiresAt > now
+```
+
+Acceptance validation:
+
+```text
+now < expiresAt
+```
+
+---
+
+# 23. RESPONSE STATUSES
+
+Use:
+
+```text
+PENDING
+ACCEPTED
+DECLINED
+EXPIRED
+CANCELED
+```
+
+Never delete expired/declined responses.
+
+They are part of business history.
+
+---
+
+# 24. OFFER EXPIRATION JOB
+
+Implement scheduled expiration.
+
+Conceptually:
+
+```sql
+UPDATE responses
+SET status = 'EXPIRED'
+WHERE status = 'PENDING'
+AND expires_at <= NOW();
+```
+
+Notify customers when offers expire when appropriate.
+
+---
+
+# 25. ACCEPT OFFER
+
+Acceptance must be atomic.
+
+Flow:
+
+```text
+Customer JWT
+ ↓
+Verify order ownership
+ ↓
+Lock order
+ ↓
+Verify response belongs to order
+ ↓
+Verify response is PENDING
+ ↓
+Verify response has not expired
+ ↓
+Accept selected response
+ ↓
+Decline all other pending responses
+ ↓
+Set acceptedProviderId
+ ↓
+Set acceptedResponseId
+ ↓
+Order = ACCEPTED
+ ↓
+Create notifications
+ ↓
+Commit transaction
+```
+
+---
+
+# 26. CONCURRENCY
+
+Prevent two responses from being accepted simultaneously.
+
+Use appropriate:
+
+- database locking
+- optimistic locking/versioning
+- transaction boundaries
+- unique constraints
+
+Invariant:
+
+```text
+ONE ORDER = MAXIMUM ONE ACCEPTED RESPONSE
+```
+
+---
+
+# 27. DECLINED RESPONSES
+
+When customer accepts Provider A:
+
+```text
+Provider A -> ACCEPTED
+
+Provider B -> DECLINED
+Provider C -> DECLINED
+```
+
+Do NOT delete Provider B/C responses.
+
+---
+
+# 28. ACCEPTED PROVIDER
+
+Order should store:
+
+```text
+acceptedProviderId
+acceptedResponseId
+```
+
+These must be server-controlled.
+
+---
+
+# 29. PROVIDER POLICIES
+
+Every provider should be able to define business policies.
+
+At minimum:
+
+```text
+Return Policy
+Refund Policy
+Cancellation Policy
+Warranty Policy
+Payment Policy
+Service Policy
+No-Show Policy
+```
+
+Provider policies should be editable by the provider.
+
+However, they must never override platform/legal restrictions.
+
+---
+
+# 30. POLICY VERSIONING
+
+Do NOT simply overwrite provider policies.
+
+Create versioned policies.
+
+Conceptually:
+
+```text
+ProviderPolicy
+ProviderPolicyVersion
+```
 
 Example:
 
 ```text
-Response created
-     ↓
-Valid for 24 hours
-     ↓
-Automatically EXPIRED
+Provider:
+Return Policy Version 1
+    -> 7 days
+
+Provider:
+Return Policy Version 2
+    -> 3 days
 ```
 
-This prevents old offers from remaining active forever.
-
-This should be decided as a business rule before implementation.
+An old Order must continue using the policy applicable when the transaction occurred.
 
 ---
 
-# 47. Order Expiration
+# 31. ORDER POLICY SNAPSHOT
 
-Orders may also need an expiration rule.
+When a provider is selected/offer accepted, create an immutable snapshot of relevant policies.
 
-For example:
+Conceptually:
 
 ```text
-Requested service date passed
-        ↓
-Order EXPIRED
+OrderPolicySnapshot
 ```
 
-This prevents providers from responding to outdated orders.
-
-Recommended future status:
+Include:
 
 ```text
+returnPolicy
+refundPolicy
+cancellationPolicy
+warrantyPolicy
+paymentPolicy
+servicePolicy
+noShowPolicy
+providerPolicyVersion
+createdAt
+```
+
+This is critical for disputes.
+
+---
+
+# 32. PLATFORM POLICY
+
+Platform-level rules override provider-specific rules where required.
+
+Conceptually:
+
+```text
+Legal Requirements
+       ↓
+Platform Policy
+       ↓
+Provider Policy
+       ↓
+Product/Service Policy
+       ↓
+Order Snapshot
+```
+
+Provider policies cannot weaken mandatory platform/legal rules.
+
+---
+
+# 33. PRODUCT-SPECIFIC POLICIES
+
+If/when WaDii supports spare parts/products, allow product-specific rules.
+
+Examples:
+
+```text
+returnPeriod
+warrantyPeriod
+returnCondition
+restockingFee
+refundEligibility
+```
+
+Policy precedence should be clearly defined.
+
+---
+
+# 34. RETURN VS REFUND
+
+Keep these concepts separate.
+
+Return:
+
+```text
+Customer returns product
+```
+
+Refund:
+
+```text
+Money is returned
+```
+
+Possible scenarios:
+
+```text
+Return + Refund
+Return without Refund
+Refund without Return
+```
+
+depending on policy and dispute resolution.
+
+---
+
+# 35. CANCELLATION POLICY
+
+Support:
+
+```text
+Customer cancellation
+Provider cancellation
+Admin cancellation
+```
+
+Track:
+
+```text
+cancelledBy
+reason
+timestamp
+```
+
+Cancellation rules may depend on order stage.
+
+---
+
+# 36. NO-SHOW POLICY
+
+Support:
+
+```text
+CUSTOMER_NO_SHOW
+PROVIDER_NO_SHOW
+```
+
+Possible consequences:
+
+- cancellation
+- refund
+- penalty
+- reliability score impact
+
+Do not silently delete the appointment/order.
+
+---
+
+# 37. WARRANTY
+
+Services and products may have warranties.
+
+Conceptually:
+
+```text
+ServiceWarranty
+```
+
+Possible fields:
+
+```text
+id
+orderId
+providerId
+startDate
+endDate
+terms
+status
+```
+
+A customer may create a warranty claim during the valid period.
+
+---
+
+# 38. DISPUTE SYSTEM
+
+Implement a general dispute model.
+
+Types:
+
+```text
+ORDER_DISPUTE
+PAYMENT_DISPUTE
+SERVICE_DISPUTE
+PRODUCT_DISPUTE
+REFUND_DISPUTE
+WARRANTY_DISPUTE
+```
+
+Statuses:
+
+```text
+OPEN
+UNDER_REVIEW
+WAITING_CUSTOMER
+WAITING_PROVIDER
+RESOLVED
+REJECTED
+CANCELED
+```
+
+Suggested entity:
+
+```text
+Dispute
+```
+
+Fields:
+
+```text
+id
+orderId
+customerId
+providerId
+type
+status
+reason
+description
+resolution
+resolvedBy
+createdAt
+resolvedAt
+```
+
+---
+
+# 39. DISPUTE EVIDENCE
+
+Create:
+
+```text
+DisputeEvidence
+```
+
+Support:
+
+- images
+- videos
+- documents
+- payment proof
+- relevant messages
+- invoices
+- service evidence
+
+Evidence must be access-controlled.
+
+---
+
+# 40. REFUNDS
+
+Create a separate:
+
+```text
+Refund
+```
+
+entity.
+
+Suggested:
+
+```text
+id
+paymentId
+orderId
+amount
+reason
+status
+requestedBy
+approvedBy
+createdAt
+processedAt
+```
+
+Statuses:
+
+```text
+REQUESTED
+APPROVED
+REJECTED
+PROCESSING
+COMPLETED
+FAILED
+```
+
+Support partial refunds.
+
+---
+
+# 41. ADDITIONAL CHARGES
+
+A provider must NOT silently change the accepted offer price.
+
+If additional work is discovered:
+
+```text
+Provider requests additional charge
+        ↓
+Customer reviews
+        ↓
+Customer accepts/rejects
+        ↓
+If accepted:
+    amountDue increases
+```
+
+Create an explicit:
+
+```text
+AdditionalCharge
+```
+
+entity or equivalent.
+
+Track:
+
+```text
+reason
+amount
+requestedBy
+approvedBy
+status
+createdAt
+```
+
+---
+
+# 42. PAYMENT
+
+Payment must be a separate domain from Order.
+
+Recommended:
+
+```text
+Payment
+PaymentAttempt
+PaymentProof
+Refund
+```
+
+Payment status:
+
+```text
+PENDING
+PROOF_SUBMITTED
+PROVIDER_CONFIRMED
+REJECTED
+DISPUTED
+EXPIRED
+CANCELED
+REFUNDED
+```
+
+---
+
+# 43. PAYMENT METHODS
+
+Initial methods:
+
+```text
+VODAFONE_CASH
+INSTAPAY
+CASH
+```
+
+Design for future:
+
+```text
+CARD
+WALLET
+OTHER
+```
+
+---
+
+# 44. PAYMENT ENTITY
+
+Suggested fields:
+
+```text
+id
+orderId
+customerId
+providerId
+method
+status
+amount
+currency
+amountPaid
+remainingAmount
+createdAt
+submittedAt
+confirmedAt
+confirmedBy
+rejectedAt
+rejectionReason
+disputedAt
+metadata
+updatedAt
+```
+
+Use:
+
+```text
+DECIMAL
+```
+
+for money.
+
+Never use floating point.
+
+---
+
+# 45. PAYMENT AMOUNT
+
+The backend determines:
+
+```text
+amountDue
+```
+
+based on:
+
+```text
+accepted offer
++
+approved additional charges
+-
+approved discounts/refunds
+```
+
+The client cannot arbitrarily choose the payable amount.
+
+---
+
+# 46. VODAFONE CASH
+
+Flow:
+
+```text
+Customer selects Vodafone Cash
+        ↓
+Backend displays provider receiving information
+        ↓
+Customer transfers money
+        ↓
+Customer uploads screenshot
+        ↓
+Payment = PROOF_SUBMITTED
+        ↓
+Provider receives notification
+        ↓
+Provider checks actual Vodafone Cash account
+        ↓
+Provider confirms only if money actually arrived
+        ↓
+Payment = PROVIDER_CONFIRMED
+```
+
+CRITICAL:
+
+```text
+Screenshot != confirmation
+```
+
+---
+
+# 47. INSTAPAY
+
+Flow:
+
+```text
+Customer selects InstaPay
+        ↓
+Backend displays receiving information
+        ↓
+Customer transfers money
+        ↓
+Customer uploads proof
+        ↓
+Payment = PROOF_SUBMITTED
+        ↓
+Provider verifies actual account
+        ↓
+Provider confirms
+        ↓
+Payment = PROVIDER_CONFIRMED
+```
+
+Again:
+
+```text
+Screenshot != confirmation
+```
+
+---
+
+# 48. CASH
+
+Flow:
+
+```text
+Customer selects CASH
+        ↓
+Customer pays provider
+        ↓
+Provider confirms cash received
+        ↓
+Payment = PROVIDER_CONFIRMED
+```
+
+Only the accepted provider may confirm.
+
+---
+
+# 49. PAYMENT PROOF
+
+Create:
+
+```text
+PaymentProof
+```
+
+Fields:
+
+```text
+id
+paymentId
+fileUrl
+uploadedBy
+uploadedAt
+reviewedBy
+reviewedAt
+status
+rejectionReason
+```
+
+Proof must be private.
+
+---
+
+# 50. MULTIPLE PAYMENT PROOFS
+
+Support multiple proofs.
+
+Never overwrite old evidence.
+
+Possible reasons:
+
+- corrected screenshot
+- multiple transfers
+- provider requests new proof
+- split payment
+
+---
+
+# 51. PAYMENT AUTHORIZATION
+
+Only the provider assigned to the accepted order can confirm/reject payment.
+
+Authorization:
+
+```text
+JWT
+ ↓
+Provider
+ ↓
+Accepted Order
+ ↓
+Payment
+```
+
+Never trust a provider ID from request body.
+
+---
+
+# 52. PAYMENT DISPUTE
+
+Example:
+
+```text
+Customer:
+"I transferred the money."
+
+Provider:
+"I did not receive it."
+```
+
+Payment can become:
+
+```text
+DISPUTED
+```
+
+Admin/Finance investigates using:
+
+- payment proof
+- transaction information
+- audit history
+- relevant chat/evidence
+
+---
+
+# 53. PAYMENT AUDIT
+
+Audit:
+
+```text
+PAYMENT_CREATED
+PAYMENT_METHOD_SELECTED
+PAYMENT_PROOF_UPLOADED
+PAYMENT_PROOF_REVIEWED
+PAYMENT_CONFIRMED
+PAYMENT_REJECTED
+PAYMENT_DISPUTED
+PAYMENT_REFUNDED
+```
+
+---
+
+# 54. PAYMENT NOTIFICATIONS
+
+Customer:
+
+```text
+PAYMENT_PROOF_SUBMITTED
+PAYMENT_CONFIRMED
+PAYMENT_REJECTED
+PAYMENT_DISPUTED
+```
+
+Provider:
+
+```text
+PAYMENT_PROOF_SUBMITTED
+PAYMENT_DISPUTED
+```
+
+Admin:
+
+```text
+PAYMENT_DISPUTED
+```
+
+---
+
+# 55. PAYMENT TIMING
+
+The architecture must support:
+
+```text
+PAY_BEFORE_SERVICE
+PAY_AT_SERVICE
+PAY_AFTER_SERVICE
+DEPOSIT_THEN_REMAINDER
+```
+
+For V1, implement the selected business rule cleanly but do not couple Payment status to Order status.
+
+---
+
+# 56. PAYMENT METHOD CHANGE
+
+Recommended:
+
+While payment is:
+
+```text
+PENDING
+```
+
+customer can change method.
+
+After proof submission:
+
+```text
+PROOF_SUBMITTED
+```
+
+do not silently mutate the old payment.
+
+Either:
+
+- cancel old payment attempt and create new one
+- or create a new payment attempt
+
+Preserve history.
+
+---
+
+# 57. INVOICING
+
+Create:
+
+```text
+Invoice
+```
+
+Conceptually:
+
+```text
+id
+orderId
+providerId
+customerId
+subtotal
+discount
+additionalCharges
+refunds
+total
+paid
+remaining
+currency
+issuedAt
+```
+
+The invoice must be consistent with the actual financial records.
+
+---
+
+# 58. PLATFORM COMMISSION
+
+Design the financial model to support future commission.
+
+Potential values:
+
+```text
+grossAmount
+discount
+additionalCharges
+refundAmount
+platformFee
+providerNetAmount
+```
+
+Do not hard-code the assumption that:
+
+```text
+provider receives 100% of order price
+```
+
+---
+
+# 59. APPOINTMENTS
+
+Orders may contain appointments.
+
+Appointments should consider:
+
+- provider working hours
+- branch
+- availability
+- requested date
+- service duration
+
+Do not blindly accept impossible appointment times.
+
+---
+
+# 60. APPOINTMENT RESCHEDULING
+
+Do not simply overwrite the appointment date.
+
+Preserve history.
+
+Track:
+
+```text
+oldDate
+newDate
+changedBy
+reason
+createdAt
+```
+
+---
+
+# 61. NO-SHOW
+
+Appointment no-show must be represented explicitly.
+
+Possible outcomes:
+
+```text
+CUSTOMER_NO_SHOW
+PROVIDER_NO_SHOW
+RESCHEDULED
+CANCELED
+```
+
+Consequences should be configurable.
+
+---
+
+# 62. ORDER TIMELINE
+
+Create:
+
+```text
+OrderTimeline
+```
+
+Example:
+
+```text
+Order created
+Providers notified
+Provider submitted offer
+Customer accepted offer
+Payment proof uploaded
+Payment confirmed
+Service started
+Service completed
+```
+
+Every important order transition should produce timeline history.
+
+---
+
+# 63. ORDER COMPLETION
+
+Recommended flow:
+
+```text
+Provider marks service completed
+        ↓
+Customer confirms
+        ↓
+Order = COMPLETED
+```
+
+A configurable timeout may automatically complete the order if customer does not respond.
+
+Do not finalize this behavior without making it configurable.
+
+---
+
+# 64. RATINGS
+
+Customer can rate provider after a qualifying completed order.
+
+Prevent arbitrary ratings.
+
+Recommended:
+
+```text
+UNIQUE(order_id, customer_id)
+```
+
+or equivalent business constraint.
+
+---
+
+# 65. PROVIDER RELIABILITY
+
+Track:
+
+```text
+response rate
+response time
+acceptance rate
+cancellation rate
+completion rate
+no-show rate
+dispute rate
+average rating
+```
+
+Use these metrics to calculate provider reliability/ranking.
+
+---
+
+# 66. CUSTOMER RELIABILITY
+
+Collect data for:
+
+- cancellation
+- no-show
+- dispute behavior
+- completed orders
+
+Do not use this to unfairly punish customers in V1.
+
+Keep it primarily analytical until business rules are finalized.
+
+---
+
+# 67. PROVIDER SUSPENSION
+
+Provider status should support:
+
+```text
+ACTIVE
+SUSPENDED
+BANNED
+```
+
+Suspended providers should not receive new orders/offers.
+
+Existing orders require explicit business handling.
+
+---
+
+# 68. FRAUD / ABUSE
+
+Implement basic detection/auditing for:
+
+- repeated payment proof submissions
+- duplicate transaction information
+- suspicious refunds
+- excessive disputes
+- fake payment confirmation
+- excessive provider cancellations
+- abnormal account behavior
+- repeated authorization failures
+
+Do not over-engineer ML fraud detection in V1.
+
+Build the data foundation first.
+
+---
+
+# 69. CHAT
+
+Conversation should be associated with the Order.
+
+Prefer:
+
+```text
+Conversation
+ ├── orderId
+ ├── customerId
+ └── providerId
+```
+
+rather than one permanent customer-provider conversation.
+
+This keeps conversations isolated per transaction.
+
+---
+
+# 70. CHAT AUTHORIZATION
+
+Only:
+
+```text
+customer
+accepted provider
+authorized admin/support
+```
+
+should access an order conversation.
+
+A user must not access another order's chat by changing an order ID.
+
+---
+
+# 71. CALL SIGNALING
+
+Secure:
+
+- JWT
+- participant IDs
+- call room/channel IDs
+- Agora/LiveKit tokens
+
+Never allow arbitrary users to generate tokens for another user.
+
+---
+
+# 72. FILE SECURITY
+
+For all uploads:
+
+```text
+profile image
+background image
+provider document
+order attachment
+payment proof
+dispute evidence
+```
+
+validate:
+
+- MIME type
+- extension
+- file signature when possible
+- size
+- generated filename
+
+Do not trust original filenames.
+
+Private files must not be publicly accessible.
+
+---
+
+# 73. NOTIFICATIONS
+
+Persist important notifications.
+
+Examples:
+
+```text
+ORDER_CREATED
+ORDER_TARGETED
+NEW_RESPONSE
+RESPONSE_ACCEPTED
+RESPONSE_DECLINED
+RESPONSE_EXPIRED
+ORDER_CANCELED
+PAYMENT_PROOF_SUBMITTED
+PAYMENT_CONFIRMED
+PAYMENT_REJECTED
+PAYMENT_DISPUTED
+ORDER_COMPLETED
+```
+
+FCM is delivery mechanism, not the only notification storage.
+
+---
+
+# 74. ADVERTISEMENTS
+
+Support:
+
+```text
+ACTIVE
+INACTIVE
 EXPIRED
 ```
 
----
+Automatic expiration job.
 
-# 48. Provider Availability
+Manual INACTIVE should remain inactive.
 
-Consider adding:
-
-```text
-acceptingOrders
-```
-
-or:
+Track:
 
 ```text
-isAvailable
-```
-
-to the provider.
-
-Then matching becomes:
-
-```text
-offers required services
-AND
-approved
-AND
-active
-AND
-accepting orders
-```
-
-This prevents notifications being sent to providers who are temporarily unavailable.
-
----
-
-# 49. Notification Fan-out Protection
-
-If the platform grows, sending thousands of FCM notifications inside the HTTP request can become slow.
-
-Recommended future architecture:
-
-```text
-Create Order
-   ↓
-Save transaction
-   ↓
-Publish OrderCreated event
-   ↓
-Background worker
-   ↓
-Find eligible providers
-   ↓
-Send notifications
-```
-
-For the current scale, synchronous processing may be acceptable, but the design should allow asynchronous processing later.
-
----
-
-# 50. API Authorization Summary
-
-## USER
-
-Allowed:
-
-```text
-Own profile
-Own orders
-Browse marketplace
-Create order
-Accept own order response
-Cancel own order
-Chat/call with authorized users
-Rate eligible providers
-Save offers
-Follow providers
-```
-
-Not allowed:
-
-```text
-Admin operations
-Other users' resources
-Other providers' business data modifications
-Other users' provider requests
+impressions
+clicks
 ```
 
 ---
 
-# 51. PROVIDER
+# 75. SAVED OFFERS
 
-Everything USER can do, plus:
+User ownership must come from JWT.
 
-```text
-Own provider profile
-Own branches
-Own work times
-Own links
-Own offers
-View eligible orders
-Create own responses
-Update own responses
-Cancel own responses
-```
+Prevent duplicate saved offers.
 
-Not allowed:
+Recommended:
 
 ```text
-Other providers' resources
-Admin operations
-Arbitrary orders
-Arbitrary response ownership
+UNIQUE(user_id, offer_id)
 ```
 
 ---
 
-# 52. ADMIN
+# 76. FOLLOW PROVIDERS
 
-Allowed:
-
-```text
-User management
-Provider management
-Provider approval
-Reference data
-Advertisements
-Platform monitoring
-Notifications/testing
-Audit information
-```
-
-Admin actions must still be explicitly authorized by backend security rules.
-
----
-
-# 53. Recommended API Changes
-
-## Create order
-
-Current:
-
-```http
-POST /orders/insert
-```
-
-Keep the endpoint if desired, but change the backend behavior.
-
-Do not trust:
+Prevent duplicate follows:
 
 ```text
-userId
-```
-
-from request body.
-
-Optional:
-
-```text
-providerId
-```
-
-means direct provider targeting.
-
-If `providerId == null`:
-
-```text
-match providers by requested services
+UNIQUE(user_id, provider_id)
 ```
 
 ---
 
-## Create response
+# 77. AUDIT LOG
 
-```http
-POST /responses/insert
-```
+Create centralized audit logging.
 
-The server derives:
+Important events:
 
 ```text
-providerId
+LOGIN
+REGISTER
+ROLE_CHANGE
+PROVIDER_APPROVED
+PROVIDER_REJECTED
+PROVIDER_SUSPENDED
+
+ORDER_CREATED
+ORDER_CANCELED
+ORDER_COMPLETED
+
+RESPONSE_CREATED
+RESPONSE_ACCEPTED
+RESPONSE_DECLINED
+RESPONSE_EXPIRED
+
+PAYMENT_CREATED
+PAYMENT_PROOF_UPLOADED
+PAYMENT_CONFIRMED
+PAYMENT_REJECTED
+PAYMENT_DISPUTED
+
+REFUND_CREATED
+ADMIN_ACTION
 ```
-
-from JWT.
-
-The client should primarily send:
-
-```text
-orderId
-comment
-location
-sparePartsPrice
-```
-
-The server determines the provider.
 
 ---
 
-## Accept response
+# 78. ERROR MODEL
 
-```http
-POST /responses/accept-response
-```
+Use consistent error responses.
 
-Request:
+Example:
 
 ```json
 {
-  "responseId": 123
+  "success": false,
+  "code": "OFFER_EXPIRED",
+  "message": "This offer has expired.",
+  "timestamp": "2026-10-29T10:00:00Z"
 }
 ```
 
-Server:
-
-```text
-authenticate user
-↓
-verify order ownership
-↓
-lock order
-↓
-verify response belongs to order
-↓
-verify order still open
-↓
-accept selected response
-↓
-decline all other responses
-↓
-set acceptedProviderId
-↓
-set order status
-↓
-create notifications
-↓
-commit
-```
+Implement meaningful business error codes.
 
 ---
 
-# 54. Recommended Response State Example
+# 79. PAGINATION
 
-Before selection:
+Paginate:
 
-```text
-Order #100
+- orders
+- responses
+- notifications
+- providers
+- offers
+- payments
+- disputes
+- audit logs
+- advertisements
 
-Provider A → PENDING → 4000
-Provider B → PENDING → 4100
-Provider C → PENDING → 4500
-```
-
-Customer chooses A:
-
-```text
-Order #100 → ACCEPTED
-
-Provider A → ACCEPTED → 4000
-Provider B → DECLINED → 4100
-Provider C → DECLINED → 4500
-```
-
-Notifications:
-
-```text
-Provider A:
-"Your offer was accepted."
-
-Provider B:
-"Your offer was not selected."
-
-Provider C:
-"Your offer was not selected."
-```
+Never return unlimited lists.
 
 ---
 
-# 55. Post-Acceptance Flow
+# 80. TRANSACTION SAFETY
 
-After acceptance:
+Use transactions for:
+
+- offer acceptance
+- order cancellation
+- payment confirmation
+- payment rejection
+- refund approval
+- additional charge approval
+- provider assignment
+
+Critical state transitions must be atomic.
+
+---
+
+# 81. TESTING
+
+After implementation, create/execute tests for:
+
+## Authentication
+
+- registration
+- login
+- invalid credentials
+- unauthorized access
+- admin registration blocked
+
+## Authorization
+
+- user accessing another user's order
+- provider accessing another provider's order
+- provider modifying another provider
+- unauthorized payment confirmation
+
+## Orders
+
+- create order
+- selected provider
+- automatic matching
+- ALL-services matching
+- order expiration
+- cancellation
+
+## Offers
+
+- valid offer
+- duplicate offer
+- expired offer
+- accepting expired offer
+- accepting already accepted offer
+- concurrent acceptance
+
+## Payments
+
+- Vodafone Cash
+- InstaPay
+- Cash
+- proof upload
+- provider confirmation
+- wrong provider confirmation
+- rejection
+- dispute
+- refund
+
+## Policies
+
+- provider policy
+- policy versioning
+- order policy snapshot
+- cancellation
+- return
+- refund
+- warranty
+- no-show
+
+## Security
+
+Test every endpoint for IDOR/ownership vulnerabilities.
+
+---
+
+# 82. DATABASE RESET / SEEDING
+
+Because this is not production:
+
+You may recreate the database.
+
+After schema creation:
+
+Create development seed data where useful:
+
+- users
+- providers
+- branches
+- services
+- reference data
+- sample orders
+- sample offers
+- sample payments
+- sample disputes
+
+Do NOT create fake production credentials that could accidentally be deployed.
+
+---
+
+# 83. API DESIGN
+
+Existing endpoints may be retained temporarily for compatibility, for example:
+
+```text
+POST /orders/insert
+GET /responses/get-all-response-of-user
+POST /responses/accept-response
+POST /responses/cancel-response
+POST /orders/cancel
+POST /responses/insert
+POST /responses/update
+```
+
+But their implementation must follow the new rules.
+
+You may redesign endpoint naming where beneficial.
+
+Do not preserve bad endpoint semantics merely because they already exist.
+
+---
+
+# 84. API DOCUMENTATION
+
+After coding is COMPLETE:
+
+Update:
+
+```text
+API_REFERENCE.md
+```
+
+The documentation must describe the FINAL implemented backend.
+
+It must include:
+
+- authentication
+- all endpoints
+- request DTOs
+- response DTOs
+- HTTP status codes
+- error codes
+- authorization requirements
+- role requirements
+- ownership rules
+- pagination
+- upload requirements
+- WebSocket
+- notifications
+- payment flow
+- offer expiration
+- refund
+- disputes
+- policies
+
+Do not update the document based on assumptions.
+
+Generate it from the actual implementation.
+
+---
+
+# 85. ROLE-BASED APPLICATION GUIDE
+
+After coding is COMPLETE:
+
+Update:
+
+```text
+APP_GUIDE_BY_ROLE.md
+```
+
+It must describe the actual application behavior for:
+
+```text
+USER
+PROVIDER
+ADMIN
+```
+
+And where relevant:
+
+```text
+SUPER_ADMIN
+SUPPORT_ADMIN
+CONTENT_ADMIN
+FINANCE_ADMIN
+```
+
+For each role document:
+
+- login
+- registration
+- profile
+- permissions
+- order flow
+- offers
+- payment
+- disputes
+- refunds
+- notifications
+- chat
+- calls
+- ratings
+- provider management
+- policies
+- analytics
+- restrictions
+
+Again:
+
+> The guide must describe what the final backend actually does.
+
+---
+
+# 86. DOCUMENTATION VALIDATION
+
+Before declaring the task complete:
+
+Compare:
+
+```text
+Actual Controllers
+Actual DTOs
+Actual Security
+Actual Services
+Actual Entities
+Actual WebSocket endpoints
+Actual scheduled jobs
+```
+
+against:
+
+```text
+API_REFERENCE.md
+APP_GUIDE_BY_ROLE.md
+```
+
+Fix any mismatch.
+
+There must be no documented endpoint that does not exist.
+
+There must be no important implemented endpoint missing from the documentation.
+
+---
+
+# 87. LEGACY CODE CLEANUP
+
+After migration:
+
+Remove or refactor:
+
+- obsolete entities
+- obsolete repositories
+- obsolete DTOs
+- duplicate business logic
+- insecure endpoints
+- unused fields
+- unused services
+- dead code
+
+Do not leave two conflicting implementations of the same business rule.
+
+---
+
+# 88. FINAL BUSINESS FLOW
+
+The final flow should conceptually be:
 
 ```text
 Customer
-    │
-    │ accepted response
-    ▼
-Provider
-    │
-    ├── Chat
-    ├── Call
-    ├── Order details
-    └── Service execution
+   |
+   v
+Create Order
+   |
+   v
+MATCHING
+   |
+   +---- Explicit Provider
+   |          |
+   |          v
+   |     Target Provider
+   |
+   +---- Automatic Matching
+              |
+              v
+       Match ALL Services
+              |
+              v
+       Notify Providers
+              |
+              v
+            QUOTING
+              |
+       +------+------+------+
+       |      |      |
+    Offer A Offer B Offer C
+       |      |      |
+    expires expires expires
+       +------+------+------+
+              |
+              v
+       Customer compares
+              |
+              v
+       Accept one offer
+              |
+              v
+       Atomic transaction
+              |
+       +------+------+
+       |             |
+   ACCEPTED       DECLINED
+   Provider       Others
+       |
+       v
+  Payment Created
+       |
+       +------------------------+
+       |            |           |
+ Vodafone Cash   InstaPay     Cash
+       |            |           |
+ Proof upload   Proof upload  Provider
+       |            |          confirms
+       +------------+-----------+
+                    |
+                    v
+          Provider verification
+                    |
+                    v
+           PAYMENT_CONFIRMED
+                    |
+                    v
+              IN_PROGRESS
+                    |
+                    v
+              SERVICE DONE
+                    |
+                    v
+              COMPLETED
+                    |
+                    v
+             Rating / Warranty
 ```
 
-After the service:
+---
+
+# 89. NON-NEGOTIABLE BUSINESS PRINCIPLES
+
+The implementation MUST follow these principles:
+
+1. Never trust client identity.
+2. Never trust client authorization.
+3. Never trust client payment amount.
+4. Never treat payment screenshot as payment confirmation.
+5. Never accept expired offers.
+6. Never delete historical offers/responses.
+7. Never allow two accepted responses for one order.
+8. Never mix payment status with order status.
+9. Never expose private payment/provider documents publicly.
+10. Never allow a provider to confirm another provider's payment.
+11. Never silently modify accepted offer prices.
+12. Never silently overwrite policy history.
+13. Never allow provider policies to violate platform/legal restrictions.
+14. Never rely only on frontend validation.
+15. Audit important business and financial actions.
+16. Preserve transaction history.
+17. Backend/database transactions are the source of truth.
+
+---
+
+# 90. IMPLEMENTATION ORDER
+
+Do the work in this order:
+
+### Phase 1
+
+Analyze current backend.
+
+### Phase 2
+
+Finalize domain model.
+
+### Phase 3
+
+Recreate development database.
+
+### Phase 4
+
+Implement entities/repositories.
+
+### Phase 5
+
+Implement authentication/authorization.
+
+### Phase 6
+
+Implement provider/business management.
+
+### Phase 7
+
+Implement order and provider matching.
+
+### Phase 8
+
+Implement offers and expiration.
+
+### Phase 9
+
+Implement acceptance and concurrency protection.
+
+### Phase 10
+
+Implement policies and snapshots.
+
+### Phase 11
+
+Implement appointments.
+
+### Phase 12
+
+Implement payments.
+
+### Phase 13
+
+Implement proofs/refunds/disputes.
+
+### Phase 14
+
+Implement notifications.
+
+### Phase 15
+
+Implement audit/history.
+
+### Phase 16
+
+Implement tests.
+
+### Phase 17
+
+Remove legacy/dead code.
+
+### Phase 18
+
+Update:
 
 ```text
-Order
- ↓
-COMPLETED
- ↓
-Customer can rate provider
+API_REFERENCE.md
+APP_GUIDE_BY_ROLE.md
 ```
+
+### Phase 19
+
+Perform final consistency/security review.
 
 ---
 
-# 56. Recommended Final Business Lifecycle
+# 91. FINAL COMPLETION REQUIREMENT
+
+Do NOT consider the task complete merely because the application compiles.
+
+Before finishing, verify:
 
 ```text
-                    ┌────────────────────┐
-                    │ Customer creates   │
-                    │      ORDER         │
-                    └─────────┬──────────┘
-                              │
-                     provider selected?
-                         /          \
-                       YES           NO
-                       /              \
-                      ▼                ▼
-             Target provider     Match providers
-                                 by ALL services
-                      \              /
-                       \            /
-                        ▼          ▼
-                    Notify eligible
-                     providers
-                          │
-                          ▼
-                    PROVIDER RESPONSE
-                          │
-                    ┌─────┴─────┐
-                    │           │
-                 PENDING      PENDING
-                    │           │
-                    └─────┬─────┘
-                          │
-                    Customer selects
-                          │
-                          ▼
-                 ┌──────────────────┐
-                 │ Accepted Response│
-                 └────────┬─────────┘
-                          │
-             ┌────────────┴────────────┐
-             ▼                         ▼
-      Selected Provider         Other Responses
-          ACCEPTED                  DECLINED
-             │
-             ▼
-        Notification
-             │
-             ▼
-        Chat / Call
-             │
-             ▼
-        Service Started
-             │
-             ▼
-        COMPLETED
-             │
-             ▼
-           Rating
+[ ] Backend compiles
+[ ] Database schema works
+[ ] Database relationships are correct
+[ ] Security works
+[ ] Ownership checks work
+[ ] Provider matching works
+[ ] ALL-services matching works
+[ ] Offer expiration works
+[ ] Offer acceptance is atomic
+[ ] Payment lifecycle works
+[ ] Vodafone Cash works
+[ ] InstaPay works
+[ ] Cash works
+[ ] Payment proof is private
+[ ] Provider payment verification is secured
+[ ] Refunds work
+[ ] Disputes work
+[ ] Policies work
+[ ] Policy snapshots work
+[ ] Cancellation works
+[ ] Warranty works
+[ ] No-show rules work
+[ ] Notifications work
+[ ] Audit logging works
+[ ] Tests pass
+[ ] Legacy insecure code removed
+[ ] API_REFERENCE.md updated
+[ ] APP_GUIDE_BY_ROLE.md updated
 ```
 
 ---
 
-# 57. Priority Implementation Plan
+# 92. FINAL OUTPUT REQUIRED FROM YOU
 
-## P0 – Critical Security
+When implementation is complete, provide a concise implementation report containing:
 
-Implement first:
+### Database
 
-- Disable public admin registration.
-- JWT-based identity everywhere.
-- Remove trust in `userId` from request bodies.
-- Remove trust in `providerId` for provider-owned operations.
-- Add ownership checks.
-- Add admin role checks.
-- Protect provider requests.
-- Protect role-change endpoints.
-- Remove passwords from API responses.
-- Fix plaintext password creation.
-- Protect private provider documents.
-- Return correct HTTP authorization errors.
+- entities created
+- entities removed
+- major relationships
+- important indexes/constraints
 
----
+### Security
 
-## P1 – Core Order Business Logic
+- authentication changes
+- authorization changes
+- ownership protections
 
-Implement next:
+### Orders
 
-- Optional `providerId` on order.
-- Direct provider targeting.
-- Service-based provider matching.
-- Require providers to offer all requested services.
-- Provider eligibility validation.
-- Provider response ownership.
-- One response per provider per order.
-- Response statuses.
-- Order accepted state.
-- `acceptedProviderId`.
-- Atomic accept-response transaction.
-- Decline other responses instead of deleting them.
-- Notifications for accepted/declined responses.
+- lifecycle
+- matching
+- offer expiration
+- acceptance
 
----
+### Payments
 
-## P2 – Communication
+- methods
+- proof
+- confirmation
+- disputes
+- refunds
 
-Then:
+### Policies
 
-- Secure chat relationship.
-- Secure call authorization.
-- Accepted-order communication.
-- Reliable notification storage.
-- FCM token/device management.
+- provider policies
+- versioning
+- order snapshots
+- cancellation
+- return
+- warranty
+- no-show
 
----
+### APIs
 
-## P3 – Production Hardening
+- added endpoints
+- modified endpoints
+- removed/deprecated endpoints
 
-Then:
+### Tests
 
-- Pagination.
-- Database constraints.
-- Audit logs.
-- Rate limiting.
-- File upload hardening.
-- Response/order expiration.
-- Provider availability.
-- Background notification processing.
-- Monitoring and structured logs.
+- tests added
+- critical scenarios verified
 
----
+### Documentation
 
-# 58. Non-Negotiable Security Rules
-
-The following rules must always be enforced by the backend:
+Confirm that:
 
 ```text
-1. Never trust userId from the client.
-2. Never trust providerId from the client for ownership.
-3. Never trust role from the client.
-4. Never allow public admin registration.
-5. Never expose passwords.
-6. Never allow users to modify another user's resources.
-7. Never allow providers to modify another provider's resources.
-8. Never allow a provider to respond to an unauthorized order.
-9. Never allow more than one accepted response per order.
-10. Accepting a response must be transactional.
-11. Do not delete declined responses.
-12. Preserve response history.
-13. Admin endpoints must be admin-only.
-14. Provider documents must be private.
-15. Call tokens must be authorized.
-16. Important business rules must also be protected by database constraints.
-17. The frontend is never the security boundary.
-18. Every authorization decision must be made by the backend.
+API_REFERENCE.md
+APP_GUIDE_BY_ROLE.md
 ```
+
+were updated to match the actual final implementation.
 
 ---
 
-# 59. Final Target Architecture
+# FINAL INSTRUCTION
 
-The target system should behave like this:
+Do not rush into coding.
+
+First understand the current project.
+
+Then redesign the domain and database.
+
+Then implement the backend systematically.
+
+The objective is not to preserve the current backend.
+
+The objective is to create a **secure, transactional, scalable, auditable WaDii marketplace backend** that can support:
 
 ```text
-                    JWT Authentication
-                           │
-                           ▼
-                  Current Authenticated User
-                           │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-             USER       PROVIDER       ADMIN
-              │            │            │
-              │            │            └── Platform Management
-              │            │
-              │            └── Provider Business
-              │
-              └── Customer Marketplace
-                           │
-                           ▼
-                         ORDER
-                           │
-                  ┌────────┴────────┐
-                  │                 │
-          Direct Provider      Service Matching
-                  │                 │
-                  └────────┬────────┘
-                           ▼
-                   Eligible Providers
-                           │
-                           ▼
-                      RESPONSES
-                           │
-                           ▼
-                    Customer Selects
-                           │
-                           ▼
-                 One ACCEPTED Response
-                           │
-              ┌────────────┴────────────┐
-              ▼                         ▼
-          Others DECLINED          Winning Provider
-                                        │
-                              ┌─────────┴─────────┐
-                              ▼                   ▼
-                            CHAT                CALL
-                              │                   │
-                              └─────────┬─────────┘
-                                        ▼
-                                   SERVICE
-                                        │
-                                        ▼
-                                    COMPLETED
-                                        │
-                                        ▼
-                                      RATE
+Customers
+Providers
+Multiple branches
+Multiple services
+Orders
+Provider matching
+Offers
+Offer expiration
+Appointments
+Payments
+Vodafone Cash
+InstaPay
+Cash
+Payment proofs
+Refunds
+Disputes
+Returns
+Warranty
+Provider policies
+Policy versioning
+Additional charges
+Invoices
+Ratings
+Chat
+Calls
+Notifications
+Analytics
+Provider reliability
+Platform commission
+Future automated payments
 ```
 
-This should be treated as the target production behavior for the WaDii backend.
+Do not declare completion until the implementation and the two documentation files accurately represent the same final system.
