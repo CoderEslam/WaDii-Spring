@@ -55,7 +55,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login",
                                 "/auth/register", "/auth/login").permitAll()
-                        .requestMatchers("/ws/**", "/ws-native/**", "/web-socket/**").permitAll()
+                        .requestMatchers("/ws/**", "/ws-native/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/catalog/**", "/api/v1/files/public/**",
                                 "/api/v1/advertisements/live", "/users/{filename:.+\\..+}").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/advertisements/*/impression",

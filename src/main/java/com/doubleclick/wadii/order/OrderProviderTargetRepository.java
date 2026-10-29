@@ -22,6 +22,8 @@ public interface OrderProviderTargetRepository extends JpaRepository<OrderProvid
 
     long countByOrderId(Long orderId);
 
+    List<OrderProviderTarget> findByProviderIdAndStatusIn(Long providerId, Collection<TargetStatus> statuses);
+
     @Query("SELECT t FROM OrderProviderTarget t JOIN FETCH t.order o WHERE t.provider.id = :providerId")
     List<OrderProviderTarget> findAllForProvider(@Param("providerId") Long providerId);
 

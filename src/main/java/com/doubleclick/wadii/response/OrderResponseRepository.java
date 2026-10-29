@@ -26,6 +26,8 @@ public interface OrderResponseRepository extends JpaRepository<OrderResponse, Lo
 
     Page<OrderResponse> findByProviderId(Long providerId, Pageable pageable);
 
+    List<OrderResponse> findByProviderIdAndStatus(Long providerId, ResponseStatus status);
+
     @Query(value = "SELECT r FROM OrderResponse r JOIN r.order o WHERE o.customer.id = :customerId",
             countQuery = "SELECT COUNT(r) FROM OrderResponse r JOIN r.order o WHERE o.customer.id = :customerId")
     Page<OrderResponse> findForCustomer(@Param("customerId") Long customerId, Pageable pageable);

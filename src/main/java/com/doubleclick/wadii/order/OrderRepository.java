@@ -38,5 +38,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     long countByCustomerId(Long customerId);
 
+    long countByAcceptedProviderIdAndStatusIn(Long providerId, Collection<OrderStatus> statuses);
+
     long countByCustomerIdAndStatus(Long customerId, OrderStatus status);
 }
