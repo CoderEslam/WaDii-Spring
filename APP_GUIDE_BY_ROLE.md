@@ -1,223 +1,213 @@
-# WaDii – Application Guide by Role
+# WaDii — Application Guide by Role
 
-WaDii is a car-services marketplace. **Users** post a request for car work (an *order*: which services and spare parts they need, where, and when). **Providers** (workshops / service centres) answer with a priced *response*. The user accepts the best response and the two chat or call each other. **Admins** run the platform: reference data, provider approvals, advertisements and user management.
+What each role can do in the implemented backend. Endpoint details: `API_REFERENCE.md` (section numbers in brackets).
+Domain model: `docs/DOMAIN_MODEL.md`.
 
-For exact request/response bodies see [`API_REFERENCE.md`](API_REFERENCE.md). This document explains **what each role can do and how the pieces fit together**.
-
----
-
-## 1. Core concepts
-
-| Concept | Meaning |
-|---|---|
-| **User** | An account (name, email, phone, city, profile and background image, FCM token for push). Has one role. |
-| **Role** | `USER` (0), `PROVIDER` (1), `ADMIN` (2). Stored on the account and checked by the server. |
-| **Provider** | The business profile attached to a `PROVIDER` account: name, rating, followers count, branches, services, links, offers. |
-| **Branch / WorkTime** | A provider's physical location, with opening hours per day. |
-| **Service** | A kind of work (e.g. "Oil change"). Providers choose which services they offer; orders request services. |
-| **Spare part** | A part named on an order. Common spare parts are an admin-managed catalogue. |
-| **Order** | A user's request: car model/year, comment, date, location, services and spare parts. Status `PENDING` or `CANCELED`. |
-| **Response** | A provider's reply to an order: comment, location, and a price per requested spare part. State `PENDING`, `ACCEPT` or `CANCEL`. |
-| **Offer** | A promotion a provider publishes (title, description, end date, services). Users can save offers. |
-| **Rate** | A user's star rating and comment for a provider. |
-| **Advertisement** | A banner ad managed by admins, with a date range and a status. |
-| **Message / Chat** | One-to-one chat between any two users, over REST and WebSocket. |
-| **Notification** | In-app inbox entries plus FCM push notifications. |
-| **Call** | Audio/video calls between two users using Agora or LiveKit, signalled over WebSocket. |
-| **Location data** | Country → Province → City hierarchy, used at registration. |
-
-### Authentication in one minute
-1. `POST /auth/register` or `POST /auth/login` returns the user with a JWT in `data.token`.
-2. Send `Authorization: Bearer <token>` on every other request.
-3. Public without a token: `/auth/**`, `GET /countries`, `/provinces`, `/cities`, and profile images (`GET /users/{filename}`).
-
-Registration takes `userType`: `0` = User, `1` = Provider (also needs `providerName`, which creates the provider profile), `2` = Admin. **The server does not restrict who can register as an admin** (see §6).
+Global rules for every role:
+- Identity always comes from the JWT. Ids of users/providers in request bodies never grant access.
+- Failures use real HTTP codes and a business `code` (e.g. 403 `ACCESS_DENIED`, 409 `OFFER_EXPIRED`) [1.2, 1.3].
+- Every important action is audited and written to the order timeline; history (offers, payments, proofs, refunds,
+  policy versions, appointment changes) is never deleted.
+- Lists are paginated (`page`, `size` <= 100) [1.4].
 
 ---
 
-## 2. Role: USER (customer)
+## 1. USER (customer, `userType` 0)
 
-A car owner looking for services.
+**Registration and login** [2]
+- Registers with `userType: 0` (email unique, password >= 8, `cityId`). Gets a JWT immediately.
+- Logs in with email + password (+ FCM token for push). Wrong email and wrong password give the same 401.
+- Can change password or log out everywhere (all tokens revoked).
 
-### 2.1 Account and profile
-- Register / log in; send an `fcmToken` so push notifications work (send `""` if there is none, not `null`).
-- View own profile: `GET /users/me`.
-- Update name, phone and FCM token: `POST /users/update`.
-- Upload profile image and background image: `POST /users/upload-image`, `POST /users/upload-background-image` (multipart `file`, max 5 MB).
-- See how many unread chat messages they have: `GET /users/me/unread-count`.
-- Check whether another user is online: `GET /users/{id}/online`.
+**Profile** [3]
+- Reads and edits only their own profile (`/users/me`), uploads a public avatar / background image.
+- Can apply to become a provider (`POST /providers/apply`) -> role PROVIDER, verification PENDING, must log in again [5.2].
 
-### 2.2 Browse the marketplace
-- **Search** everything by text: `GET /search?q=` → offers, services, providers and branches that match.
-- **Providers**: list (`GET /providers/show-all`), details, filter by one service or several services (`/providers/filter-by-service/{id}`, `/providers/filter-by-services?serviceIds=1,2`).
-- **Branches and opening hours**: `GET /branches/by-provider/{providerId}`, `POST /work-time/get-all-work-time/{branchId}`.
-- **Reference data**: services, car types, common spare parts, cancel reasons, countries / provinces / cities.
-- **Offers**: all offers (each marked `saved` for the current user), filtered by service(s).
-- **Advertisements**: `GET /advertisements/show-all` returns only ads that are currently valid (see §4.5). Report display and clicks with `POST /advertisements/track-impression/{id}` and `/track-click/{id}`.
+**Browsing**
+- Catalog (services, car types, cities) without login; verified providers with ratings, branches, policies [5.1];
+  promotional offers, which they can save [20]; follows providers [5.1].
 
-### 2.3 Follow, rate and save
-- **Follow / unfollow a provider**: `POST /providers/follow-provider/{id}`, `DELETE /providers/unfollow-provider/{id}`. The provider's follower count updates. List followers with `GET /providers/{id}/followers`.
-- **Rate a provider** with a score and comment: `POST /rate/insert`; edit or delete only your own rating.
-- **Save offers** to a personal list: `POST /saved-offers/insert`, list with `GET /saved-offers/my-saved-offers`, remove with `DELETE /saved-offers/remove/{offerId}`.
+**Order flow** [6]
+1. Creates an order: car, requested date, location, services (one or more), spare parts to price, optional comment,
+   optional attachments (private photos/PDF), optionally a specific provider.
+2. With a provider chosen: only that provider is invited (must be verified, active, and offer **all** services).
+   Without: every eligible provider offering **all** services near the location is invited (top 20 by ranking).
+   If nobody matches, the order waits in MATCHING and is retried until its 48 h deadline.
+3. Receives offers (NEW_RESPONSE notification) and compares them sorted by RECOMMENDED, LOWEST_PRICE, HIGHEST_RATED,
+   NEAREST or FASTEST_RESPONSE [7]. Each offer shows price breakdown, branch distance, expiry and provider rating.
+4. Declines offers or accepts one. Acceptance is atomic: the chosen offer is ACCEPTED, all others DECLINED,
+   policies are snapshotted, a chat and a payment request are created. Expired offers cannot be accepted.
+5. Can edit the order only before any offer arrives; otherwise cancel and create a new one.
+6. If no offer is accepted within 48 h, the order becomes EXPIRED.
 
-### 2.4 The main flow: request work and choose a provider
-1. **Create an order** – `POST /orders/insert` with car model/year, comment, date, optional latitude/longitude, `servicesIds` and `spareParts` (names). Status starts as `PENDING`.
-2. **Providers answer** with responses (see §3.3). The user reads them with `GET /responses/get-all-response-of-user`, each showing the provider, comment, location and the price of every spare part.
-3. **Accept a response** – `POST /responses/accept-response` `{id}`:
-   - the response becomes `ACCEPT`;
-   - all other responses on that order are deleted;
-   - the provider gets an in-app notification (`RESPONSE_ACCEPTED`) and a push.
-4. **Or reject one** – `POST /responses/cancel-response` `{id}`: that response is deleted and the provider is notified (`RESPONSE_REJECTED`).
-5. **Cancel the whole order** – `POST /orders/cancel` `{orderId, reasonId}` with a reason from `/reasons/show-all`. Only the owner can cancel; status becomes `CANCELED`.
-6. **Review own orders** – `GET /orders/show-all-order-of-user`. A user may delete only their own orders.
+**Appointment** [8]
+- Schedules or reschedules (with a reason) inside the branch working hours; every change is kept.
+- Reports a PROVIDER_NO_SHOW after the appointment time + 30 min -> order canceled, full refund approved.
 
-### 2.5 Become a provider
-A user can apply to be a provider: `POST /provider-requests/request` (multipart) with business name, address, phone, services, social links and optional ID / tax-card photos. One pending request per user. An admin approves or rejects it (see §4.3); the user receives a push either way and, once approved, their role becomes `PROVIDER`.
+**Payment (V1: pay before the service starts)** [9]
+- Chooses Vodafone Cash, InstaPay or Cash on the payment request.
+- Vodafone Cash / InstaPay: sees the provider's receiving account, transfers outside the app, uploads one or more
+  screenshots (private). The payment shows PROOF_SUBMITTED until the **provider** confirms the money arrived.
+  A screenshot alone never confirms anything.
+- Cash: pays in person; the provider confirms.
+- If rejected, pays again (new payment) or opens a payment dispute. Can switch method; after a proof was uploaded
+  the old payment is canceled and a new one opened (history kept).
+- Approves or rejects additional charges requested by the provider; approved charges must be paid before completion [10].
 
-### 2.6 Chat, notifications, calls
-- **Chat**: send and read messages (`/messages/...`), see the conversation list (`GET /messages/chat-list`), a conversation with one user (`GET /messages/conversation/{userId}`). Real-time delivery, typing indicators and read receipts use the WebSocket channel (§5).
-- **Notifications**: `GET /notifications/my`, `/my/unread`, `/my/unread-count`, `POST /notifications/mark-read/{id}`, `/mark-all-read`.
-- **Calls**: request a token with `POST /agora/token` or `POST /livekit/token`, then send the invite over the WebSocket (§5).
+**Completion, rating, aftercare**
+- When the provider marks the job done, confirms completion (or it auto-completes after 72 h if fully paid).
+  An invoice is issued [12]; a warranty is issued if the provider's warranty policy grants one [15].
+- Rates the provider once per completed order (1–5) [16].
+- Files warranty claims while the warranty is valid; escalates a rejected claim to a dispute [15].
+- Requests a return inside the return window (separate from refunds) [15].
+- Requests partial or full refunds of confirmed payments inside the refund window; the provider (or finance)
+  approves and sends the money back [11].
 
----
+**Cancellation** [6.4]
+- Any time before the service starts. Before acceptance: free. After acceptance: refund of what was paid, minus the
+  cancellation fee from the snapshot if canceling inside the free-cancellation window before the appointment.
+- After the service started: cannot cancel; opens a dispute instead.
 
-## 3. Role: PROVIDER (workshop / service centre)
+**Disputes** [14]
+- Opens ORDER, SERVICE, PRODUCT, REFUND, WARRANTY or PAYMENT disputes on their orders, adds private evidence
+  (photos, videos, documents, chat messages, payment proofs, notes), follows status, cancels while OPEN.
 
-A provider can do everything a user can do, plus manage the business and answer orders.
+**Notifications, chat, calls** [17, 18, 19]
+- Persistent inbox + push + WebSocket. Chat and voice/video calls only with the accepted provider of each order,
+  inside that order's conversation.
 
-### 3.1 How an account becomes a provider
-- **Register directly** with `userType = 1` and `providerName`; or
-- **Apply** from a user account and be approved by an admin; or
-- **Created by an admin** via `POST /providers/create-by-admin`.
-
-### 3.2 Manage the business profile
-| Task | Endpoint |
-|---|---|
-| View own provider profile | `GET /providers/me` |
-| Edit personal info, services, branches (with opening hours), links and offers in one call | `POST /providers/update-all/{id}` |
-| Replace the services offered | `POST /providers/update-services` |
-| Add / edit / delete a branch | `POST /branches/insert`, `/update`, `DELETE /branches/delete/{id}` |
-| Add / edit / delete opening hours of a branch | `/work-time/insert`, `/update`, `DELETE /work-time/delete/{id}` |
-| Add / edit / delete social or web links | `/links/insert`, `/update`, `DELETE /links/delete/{id}` |
-| Publish / edit / delete offers (promotions linked to services, with an end date) | `/offers/insert`, `/update`, `DELETE /offers/delete/{id}` |
-| See followers | `GET /providers/{id}/followers` |
-
-Ratings from users are shown on the provider profile; the provider cannot edit them.
-
-### 3.3 Win business: answer orders
-1. **See relevant orders**: `GET /orders/show-all-order-of-provider`.
-2. **Send a response**: `POST /responses/insert` with `orderId`, `providerId`, a comment, optional location, and `sparePartsPrice: [{id: <spare part id>, price}]`. The state starts as `PENDING`. Only accounts with role `PROVIDER` may do this.
-3. **Edit** your own response with `POST /responses/update`, or **delete** it.
-4. **Learn the result** through notifications: `RESPONSE_ACCEPTED` (your offer won; other responses on that order disappear) or `RESPONSE_REJECTED`.
-5. **Talk to the customer** by chat or call.
-
-### 3.4 Everything a user can do
-Providers keep the full user toolset: browsing, search, chat, calls, notifications, following other providers, saving offers, and profile / image upload.
+**Restrictions**
+- Cannot see other customers' orders, offers they did not receive, other providers' data, or any private file
+  that is not theirs. Cannot rate without a completed order. Customer statistics are collected for analytics only
+  and never restrict a customer in V1.
 
 ---
 
-## 4. Role: ADMIN (platform operator)
+## 2. PROVIDER (`userType` 1)
 
-Admins maintain the data the app depends on and moderate the platform.
+**Registration and verification** [2, 5]
+- Registers with `userType: 1` and `providerName`, or applies from a customer account. Starts PENDING.
+- Uploads verification documents (private: only the provider and support admins can open them).
+- A SUPPORT admin verifies or rejects. Only VERIFIED + ACTIVE providers that are accepting orders receive orders.
 
-### 4.1 Reference data (admin-only writes)
-| Data | Endpoints (insert / update / delete) |
-|---|---|
-| Services | `/services/insert`, `/update`, `DELETE /delete/{id}` |
-| Car types | `/car-types/...` |
-| Common spare parts | `/common-spare-parts/...` |
-| Countries | `/countries/...` |
-| Cities | `/cities/...` |
+**Business profile** [5.3]
+- Name, description, service radius (km), services offered, links, availability switch (`acceptingOrders`).
+- Branches with address, coordinates, phone, active flag and weekly working hours (used for matching distance,
+  day availability and appointment validation). Branches are deactivated, never deleted.
+- Receiving accounts for Vodafone Cash and InstaPay (copied onto each payment when the customer chooses the method).
+- Own reliability statistics (response rate, completion, cancellations, no-shows, disputes, average response time).
 
-Provinces (`/provinces`), reasons (`/reasons`) and individual spare parts (`/spare-parts`) can currently be written by any logged-in user, not only admins. Reading countries / provinces / cities needs no login.
+**Policies** [13]
+- Publishes versions of Return, Refund, Cancellation, Warranty, Payment, Service and No-Show policies.
+  Every change is a new version; older versions stay. Versions weaker than platform rules are refused
+  (e.g. cancellation fee above 50%).
+- Orders keep the snapshot taken when the offer was accepted; later changes never affect them.
 
-### 4.2 User management
-- Create a user with any role: `POST /users/insert` (admin only; password is stored as given, see §6).
-- List, view, update and delete users: `/users/show-all`, `/users/show/{id}`, `/users/update`, `DELETE /users/delete/{id}`.
-- Create a provider with full profile in one call: `POST /providers/create-by-admin` (user fields, provider name, services, branches with work times, links, offers).
+**Order flow** [6, 7]
+1. Gets ORDER_TARGETED notifications (no customer identity until accepted) and lists invited orders by scope
+   OPEN / ASSIGNED / CLOSED.
+2. Sends one offer per order: labor, per-part prices, discount (price computed by the server), duration, branch,
+   optional appointment proposal, expiry between 1 h and 7 days (default 48 h, capped at the order deadline).
+3. Edits or withdraws a pending offer; declines invitations.
+4. On acceptance (RESPONSE_ACCEPTED) the chat opens and the customer sees the payment request. Not selected ->
+   RESPONSE_DECLINED; expired -> RESPONSE_EXPIRED.
 
-### 4.3 Provider applications
-1. `GET /provider-requests/show-all` – list pending applications (with ID / tax-card image filenames).
-2. `POST /provider-requests/accept/{id}` – creates the provider (name, services and links from the application), sets the user's role to `PROVIDER`, deletes the application and pushes `PROVIDER_ACCEPTED`.
-3. `POST /provider-requests/reject/{id}?reason=...` – deletes the application and pushes `PROVIDER_REJECTED` with the reason.
-4. Role switches without deleting data: `POST /provider-requests/put-it-user/{userId}` (provider → user) and `/put-it-provider/{userId}` (back to provider).
+**Payment** [9]
+- Only the accepted provider of the order can confirm or reject its payments.
+- Vodafone Cash / InstaPay: checks the real wallet/bank account and confirms only if the money arrived; otherwise
+  rejects with a reason. Cash: confirms when received.
+- Cannot start the service before the order is fully paid.
+- Requests additional charges for extra work; never edits the accepted price [10].
+- Approves/rejects refund requests and marks approved refunds as sent [11]. Provider/admin/no-show cancellations
+  create refunds already approved that the provider must send.
 
-### 4.4 Advertisements
-- Create / edit / delete: `/advertisements/insert`, `/update`, `DELETE /delete/{id}`. Fields: title (required), description, image URL, target URL, advertiser name, priority (higher shows first), start date, end date, status.
-- **Change status manually**: `PUT /advertisements/status/{id}/{status}` where status is `ACTIVE`, `INACTIVE` or `EXPIRED`.
-- Browse by status or advertiser, and see performance (`impressions`, `clicks`) on each ad: `/advertisements/by-status/{status}`, `/by-advertiser/{name}`.
+**Service execution**
+- Schedules/reschedules appointments, reports CUSTOMER_NO_SHOW (refund minus the no-show fee from the snapshot).
+- Starts the job, marks it done; the customer confirms or it auto-completes.
+- Handles warranty claims (accept / reject / resolve) and returns (approve, receive with optional refund, close).
 
-### 4.5 Advertisement lifecycle (automatic)
-- Apps see only ads that are `ACTIVE` **and** between start and end date.
-- A scheduled job runs **every day at 00:01**: an ad whose date range includes today becomes `ACTIVE`; otherwise it becomes `EXPIRED`.
-- Ads an admin set to `INACTIVE` are **never touched** by the job, so an admin can switch an ad off and it stays off. To bring it back, set it to `ACTIVE`; the next daily run will expire it if it is outside its dates.
+**Cancellation** [6.4]
+- May cancel an accepted order before starting, with a reason; the customer is refunded in full. Cancellations
+  lower reliability; more than 5 in 30 days raise a fraud flag for admins.
 
-### 4.6 Oversight
-Admins can read all orders, responses, rates, messages and notifications through the `show-all` endpoints, and send test pushes (`POST /notifications/test-send/{userId}`).
+**Disputes, chat, calls, notifications** [14, 17, 19]
+- Opens disputes on orders they won, adds evidence; chats and calls with the customer of each accepted order.
+
+**Promotions and audience** [20, 5.1]
+- Publishes promotional offers linked to services; sees follower count and ratings.
+
+**Restrictions**
+- Cannot respond to orders they were not invited to, see other providers' offers, confirm another provider's payments,
+  edit another provider's branches/documents, or access orders/chats of other providers.
+- While SUSPENDED/BANNED: no new orders or offers; pending offers are withdrawn automatically; orders already
+  accepted are handled by support.
+- A provider account may also place orders as a customer, but never with its own provider profile.
 
 ---
 
-## 5. Real-time features (all roles)
+## 3. ADMIN (`userType` 2) and admin permissions
 
-| Feature | How it works |
-|---|---|
-| **Chat** | Connect to the STOMP WebSocket `/ws` with the JWT. Send a message, receive messages on `/user/queue/messages`. REST endpoints under `/messages` give history. |
-| **Typing & read receipts** | STOMP payloads `{toUserId, typing}` and `{messageId}`. |
-| **Presence** | `GET /presence?userIds=1,2,3`, `GET /presence/online`, and live updates on `/topic/presence`. |
-| **Calls** | Both sides get a token (`/agora/token` or `/livekit/token`). The channel name is the two user IDs sorted and joined with `_`. Signalling (`CALL_INVITE`, `CALL_ACCEPT`, `CALL_REJECT`, `CALL_END`) goes over the raw WebSocket `/web-socket/{userId}?token=JWT`. If the callee is offline they get a push. |
-| **Push notifications (FCM)** | Sent for accepted/rejected responses, accepted/rejected provider applications and incoming calls, using the `fcmToken` saved on the account. |
+Admins never come from public registration. The first SUPER_ADMIN comes from `ADMIN_EMAIL` / `ADMIN_PASSWORD`
+at startup; other admins are created by a SUPER_ADMIN [22]. Admins cannot place orders. Every admin action is audited.
+
+| Capability | SUPER | SUPPORT | CONTENT | FINANCE |
+|---|:-:|:-:|:-:|:-:|
+| Create admins, change admin roles | ✔ | | | |
+| List users, suspend/ban/reactivate accounts (admins: SUPER only) | ✔ | ✔ | | |
+| Verify/reject providers, suspend/ban/reactivate, read verification documents | ✔ | ✔ | | |
+| Read any order, its timeline, attachments, conversation (read-only) | ✔ | ✔ | | |
+| Cancel any non-terminal order (full refund) | ✔ | ✔ | | |
+| Handle ORDER / SERVICE / PRODUCT / WARRANTY disputes | ✔ | ✔ | | |
+| Handle PAYMENT / REFUND disputes, financial outcomes | ✔ | | | ✔ |
+| List payments and refunds, approve/complete refunds, read payment proofs | ✔ | (proofs) | | ✔ |
+| Catalog (services, car types, cities, reasons), advertisements, rating moderation | ✔ | (ratings) | ✔ | |
+| Audit logs | ✔ | ✔ | | ✔ |
+| Fraud flags (list, review, dismiss) | ✔ | ✔ | | ✔ |
+
+### SUPER_ADMIN
+Everything below, plus admin account management. Cannot remove their own SUPER_ADMIN role.
+
+### SUPPORT_ADMIN
+- **Provider management** [5.4]: review PENDING providers and documents, verify or reject (provider notified),
+  suspend / ban / reactivate. On suspension, the response tells how many accepted orders need explicit handling.
+- **Users** [22]: search, view, suspend/ban/reactivate non-admin accounts (tokens revoked immediately).
+- **Orders**: view all orders, timelines, attachments and conversations; cancel orders with a reason (full refund).
+- **Disputes** [14]: move non-financial disputes through UNDER_REVIEW / WAITING_CUSTOMER / WAITING_PROVIDER,
+  resolve with an outcome (non-financial) or reject; read evidence.
+- **Moderation**: delete ratings; review fraud flags.
+
+### CONTENT_ADMIN
+- **Catalog** [4]: countries, provinces, cities, services (activate/deactivate), car types, spare-part suggestions,
+  cancellation reasons.
+- **Advertisements** [21]: create, edit, activate/deactivate (INACTIVE stays inactive), delete, daily
+  impression/click stats; ads past their end date expire automatically.
+- **Ratings**: moderate (delete).
+
+### FINANCE_ADMIN
+- **Payments** [9]: list and filter all payments; read proofs.
+- **Payment disputes** [14]: investigate with proofs, transaction references, audit history and chat evidence;
+  resolve as PAYMENT_CONFIRMED (payment confirmed by finance) or PAYMENT_REJECTED, or REFUND_CUSTOMER with an amount.
+- **Refunds** [11]: list, approve/reject, mark completed (overrides when the provider does not act).
+- **Audit and fraud**: audit logs, fraud flags (duplicate transaction references, repeated proofs, suspicious refunds).
+- Commission (`wadii.commission.percent`) shows in every invoice as `platformFee` / `providerNet` [12].
+
+### Analytics available to admins
+- Provider reliability metrics (`provider_stats`, recomputed hourly), customer behaviour (`customer_stats`,
+  analytical only), order funnel per provider (`order_provider_targets`: targeted -> viewed -> responded),
+  advertisement daily stats, audit log and fraud flags.
 
 ---
 
-## 6. Permission matrix
+## 4. Calls and real-time (all roles)
 
-✔ = allowed and enforced by the server. ✘ = not available.
+- Calls only inside an order conversation, between its customer and accepted provider. The server creates the channel
+  (`conv_<id>`) and issues Agora/LiveKit tokens only for the caller's own user id [17].
+- Real-time events over STOMP (`/ws`, `/ws-native`): notifications, messages, typing, read receipts, call signaling;
+  users can only subscribe to their own queues [18].
 
-| Capability | USER | PROVIDER | ADMIN |
-|---|:-:|:-:|:-:|
-| Register / login, own profile, images | ✔ | ✔ | ✔ |
-| Search, browse providers, offers, branches, ads | ✔ | ✔ | ✔ |
-| Follow providers, rate, save offers | ✔ | ✔ | ✔ |
-| Create / cancel own orders | ✔ | ✔ | ✔ |
-| Accept / decline responses | own orders | own orders | own orders |
-| Send responses to orders | ✘ | ✔ | ✘ |
-| Manage branches, work times, links | ✘ | ✔ | ✘ |
-| Manage offers | ✘ | ✔ | ✘ |
-| Update provider profile (`update-all`, `update-services`) | ✘ | own profile | any provider |
-| Apply to become a provider | ✔ | ✔ | ✔ |
-| Approve / reject applications | ✘ | ✘ | ✔ |
-| Create providers by admin / create users | ✘ | ✘ | ✔ |
-| Manage services, car types, common spare parts, countries, cities | ✘ | ✘ | ✔ |
-| Manage provinces, reasons, spare parts | ✘ | ✘ | ✔ |
-| Manage advertisements, change ad status | ✘ | ✘ | ✔ |
-| Update / delete a user | own account | own account | any user |
-| Chat, calls, notifications, presence | ✔ | ✔ | ✔ |
+## 5. What changed for existing clients
 
-### Security update
-The gaps listed in earlier versions of this guide (admin self-registration, missing ownership checks, ids trusted from request bodies, HTTP 200 on denied actions, passwords/tokens in responses) were fixed in the security and order-flow rewrite. The matrix above therefore treats every ◐ entry as enforced:
-
-- Only the order owner can accept or decline responses, cancel, complete or delete an order.
-- Provider data (profile, services, branches, links, offers) can be changed only by that provider or an admin.
-- Provider requests, role changes, user listing and reference-data writes are admin only.
-- Chat, calls and presence need an accepted order between the two users.
-- Ratings need a completed order. See `API_REFERENCE.md` for details.
-
-## 7. Typical journeys
-
-**Customer gets a repair quote**
-1. Register (`userType 0`) → pick country/province/city from public endpoints.
-2. Search or browse providers → create an order.
-3. Wait for providers to respond → open responses → compare prices → accept one.
-4. Chat or call the provider → after the job, rate the provider.
-
-**Workshop joins and gets work**
-1. Register as provider (`userType 1`) or apply and wait for admin approval.
-2. Complete profile: services, branches + opening hours, links, offers.
-3. Check `show-all-order-of-provider` → send priced responses.
-4. Get a push when accepted → contact the customer.
-
-**Admin launches a banner**
-1. Create the ad with dates and priority (status `ACTIVE`).
-2. The app shows it only while today is within its dates; the nightly job expires it afterwards.
-3. Pause it any time with `PUT /advertisements/status/{id}/INACTIVE`.
-4. Monitor impressions and clicks on the ad.
+- New API under `/api/v1`; `/auth/login` and `/auth/register` still work at the root.
+- Only the legacy endpoints listed in `API_REFERENCE.md` section 23 remain (deprecated, same rules as the new API).
+- Chat is per order (conversation id), not per user pair; the raw `/web-socket/{userId}` socket was removed.
+- Payment is a separate flow after acceptance; the order has no PAID status.

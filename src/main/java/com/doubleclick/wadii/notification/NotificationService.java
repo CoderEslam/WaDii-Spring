@@ -23,7 +23,11 @@ public class NotificationService {
     private final NotificationRepository repository;
     private final PushGateway pushGateway;
     private final SimpMessagingTemplate messagingTemplate;
-    private final ExecutorService deliveryExecutor = Executors.newFixedThreadPool(2);
+    private final ExecutorService deliveryExecutor = Executors.newFixedThreadPool(2, r -> {
+        Thread t = new Thread(r, "notification-delivery");
+        t.setDaemon(true); // never blocks JVM shutdown
+        return t;
+    });
 
     public void notify(Long userId, NotificationType type, String title, String body, Long orderId) {
         notify(userId, type, title, body, orderId, null);
