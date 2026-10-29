@@ -32,11 +32,16 @@ public interface AdvertisementRepository extends JpaRepository<Advertisement, Lo
     @Query("UPDATE Advertisement a SET a.clicks = a.clicks + 1 WHERE a.id = :id")
     int incrementClicks(@Param("id") Long id);
 
+    /** Portable SQL (PostgreSQL and MySQL/MariaDB); callers fall back to {@link #insertDaily} when no row was updated. */
     @Modifying
-    @Query(value = "INSERT INTO advertisement_daily_stats (advertisement_id, day, impressions, clicks) VALUES (:id, :day, :imp, :clk) "
-            + "ON CONFLICT (advertisement_id, day) DO UPDATE SET impressions = advertisement_daily_stats.impressions + :imp, "
-            + "clicks = advertisement_daily_stats.clicks + :clk", nativeQuery = true)
-    int upsertDaily(@Param("id") Long id, @Param("day") LocalDate day, @Param("imp") long impressions, @Param("clk") long clicks);
+    @Query(value = "UPDATE advertisement_daily_stats SET impressions = impressions + :imp, clicks = clicks + :clk "
+            + "WHERE advertisement_id = :id AND day = :day", nativeQuery = true)
+    int incrementDaily(@Param("id") Long id, @Param("day") LocalDate day, @Param("imp") long impressions, @Param("clk") long clicks);
+
+    @Modifying
+    @Query(value = "INSERT INTO advertisement_daily_stats (advertisement_id, day, impressions, clicks) VALUES (:id, :day, :imp, :clk)",
+            nativeQuery = true)
+    int insertDaily(@Param("id") Long id, @Param("day") LocalDate day, @Param("imp") long impressions, @Param("clk") long clicks);
 
     @Query(value = "SELECT day, impressions, clicks FROM advertisement_daily_stats WHERE advertisement_id = :id "
             + "AND day >= :from ORDER BY day", nativeQuery = true)

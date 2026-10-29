@@ -118,9 +118,14 @@ public class AdvertisementService {
     private void track(Long id, boolean impression) {
         Advertisement a = repository.findById(id).filter(x -> x.isLiveAt(clock.instant()))
                 .orElseThrow(() -> BusinessException.notFound(ErrorCode.NOT_FOUND));
+        // The increment row-locks the advertisement until commit, so the daily update-or-insert below cannot race.
         if (impression) repository.incrementImpressions(a.getId());
         else repository.incrementClicks(a.getId());
-        repository.upsertDaily(a.getId(), LocalDate.now(clock.withZone(properties.zone())), impression ? 1 : 0, impression ? 0 : 1);
+        LocalDate day = LocalDate.now(clock.withZone(properties.zone()));
+        long imp = impression ? 1 : 0, clk = impression ? 0 : 1;
+        if (repository.incrementDaily(a.getId(), day, imp, clk) == 0) {
+            repository.insertDaily(a.getId(), day, imp, clk);
+        }
     }
 
     private void apply(Advertisement a, AdRequest r) {
