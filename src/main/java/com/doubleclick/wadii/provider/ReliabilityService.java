@@ -15,7 +15,9 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Recomputes provider reliability and customer behaviour statistics from the transactional tables.
@@ -44,12 +46,16 @@ public class ReliabilityService {
               (SELECT COUNT(*) FROM appointments a JOIN orders o ON o.id = a.order_id
                  WHERE o.accepted_provider_id = p.id AND a.status = 'PROVIDER_NO_SHOW'),
               (SELECT COUNT(*) FROM disputes d WHERE d.provider_id = p.id),
-              (SELECT AVG(EXTRACT(EPOCH FROM (t.responded_at - t.notified_at)) / 60.0) FROM order_provider_targets t
-                 WHERE t.provider_id = p.id AND t.responded_at IS NOT NULL AND t.notified_at IS NOT NULL),
               (SELECT COUNT(*) FROM order_cancellations c JOIN orders o ON o.id = c.order_id
                  WHERE o.accepted_provider_id = p.id AND c.actor_role = 'PROVIDER' AND c.created_at >= :since),
               p.user_id
             FROM providers p
+            """;
+
+    /** HQL rather than native SQL: timestamp differences have no portable SQL form across PostgreSQL and MySQL/MariaDB. */
+    private static final String AVG_RESPONSE_SECONDS_HQL = """
+            SELECT t.provider.id, AVG((t.respondedAt - t.notifiedAt) BY SECOND) FROM OrderProviderTarget t
+            WHERE t.respondedAt IS NOT NULL AND t.notifiedAt IS NOT NULL GROUP BY t.provider.id
             """;
 
     private static final String CUSTOMER_SQL = """
@@ -79,6 +85,10 @@ public class ReliabilityService {
         List<Object[]> rows = entityManager.createNativeQuery(PROVIDER_SQL)
                 .setParameter("since", now.minus(Duration.ofDays(30)))
                 .getResultList();
+        Map<Long, Double> avgResponseSeconds = new HashMap<>();
+        for (Object[] r : entityManager.createQuery(AVG_RESPONSE_SECONDS_HQL, Object[].class).getResultList()) {
+            if (r[1] != null) avgResponseSeconds.put(((Number) r[0]).longValue(), ((Number) r[1]).doubleValue());
+        }
         for (Object[] row : rows) {
             Long providerId = ((Number) row[0]).longValue();
             ProviderStats s = providerStatsRepository.findById(providerId).orElseGet(() -> new ProviderStats(providerId));
@@ -91,7 +101,8 @@ public class ReliabilityService {
             s.setProviderCancelCount(cancels);
             s.setNoShowCount(noShows);
             s.setDisputeCount(disputes);
-            s.setAvgResponseMinutes(row[8] == null ? null : new BigDecimal(row[8].toString()).setScale(2, RoundingMode.HALF_UP));
+            Double avgSeconds = avgResponseSeconds.get(providerId);
+            s.setAvgResponseMinutes(avgSeconds == null ? null : BigDecimal.valueOf(avgSeconds / 60.0).setScale(2, RoundingMode.HALF_UP));
             double responseRate = ratio(responded, targeted), completionRate = ratio(completed, accepted);
             double cancellationRate = ratio(cancels, accepted), noShowRate = ratio(noShows, accepted), disputeRate = ratio(disputes, accepted);
             s.setResponseRate(rate(responseRate));
@@ -106,9 +117,9 @@ public class ReliabilityService {
             s.setReliabilityScore(BigDecimal.valueOf(50 * (1 - weight) + raw * weight).setScale(2, RoundingMode.HALF_UP));
             s.setUpdatedAt(now);
             providerStatsRepository.save(s);
-            int recentCancels = n(row[9]);
+            int recentCancels = n(row[8]);
             if (recentCancels > properties.getFraud().getMaxProviderCancellationsPer30Days()) {
-                fraudService.flag(((Number) row[10]).longValue(), FraudFlagType.EXCESSIVE_PROVIDER_CANCELLATIONS, "PROVIDER", providerId,
+                fraudService.flag(((Number) row[9]).longValue(), FraudFlagType.EXCESSIVE_PROVIDER_CANCELLATIONS, "PROVIDER", providerId,
                         recentCancels + " provider cancellations in 30 days");
             }
         }

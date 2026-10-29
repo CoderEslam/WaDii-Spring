@@ -1,7 +1,8 @@
 # WaDii Domain Model (V1)
 
 Source of truth for the re-architected backend. The schema lives in
-`src/main/resources/db/migration` (Flyway); entities mirror it with `ddl-auto=validate`.
+`src/main/resources/db/migration/postgresql` (Flyway), with a MariaDB port in
+`db/migration/mariadb` that must be kept in step; entities mirror it with `ddl-auto=validate`.
 
 ## Conventions
 
