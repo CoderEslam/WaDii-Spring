@@ -56,11 +56,14 @@ class ListingAndChatSpecTest extends IntegrationTest {
         Actor buyer = api.customer();
         long conversation = api.post("/api/v1/conversations", buyer, Map.of("kind", "LISTING", "refId", id)).ok().data().path("id").asLong();
         api.post("/api/v1/conversations/" + conversation + "/messages", buyer, Map.of("body", "Is it still available?")).ok();
+        assertThat(api.get("/api/v1/conversations/unread-count", seller).ok().data().path("count").asLong()).isEqualTo(1);
+        assertThat(api.get("/api/v1/conversations/unread-count", buyer).ok().data().path("count").asLong()).isZero();
         var list = api.get("/api/v1/conversations", seller).ok().data().path("items");
         assertThat(list.get(0).path("unread").asInt()).isEqualTo(1);
         var messages = api.get("/api/v1/conversations/" + conversation + "/messages", seller).ok().data();
         assertThat(messages.get(0).path("body").asText()).isEqualTo("Is it still available?");
         assertThat(api.get("/api/v1/conversations", seller).ok().data().path("items").get(0).path("unread").asInt()).isZero();
+        assertThat(api.get("/api/v1/conversations/unread-count", seller).ok().data().path("count").asLong()).isZero();
         assertThat(api.get("/api/v1/notifications/unread-count", seller).ok().data().path("count").asLong()).isPositive();
 
         Actor stranger = api.customer();

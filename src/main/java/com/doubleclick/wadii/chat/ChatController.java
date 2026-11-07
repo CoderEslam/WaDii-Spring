@@ -31,6 +31,11 @@ public class ChatController {
         return ApiResponse.ok(service.list(me, page, size));
     }
 
+    @GetMapping("/unread-count")
+    public ResponseEntity<ApiResponse<java.util.Map<String, Long>>> unread(@AuthenticationPrincipal AuthUser me) {
+        return ApiResponse.ok(java.util.Map.of("count", service.unreadCount(me)));
+    }
+
     @PostMapping
     public ResponseEntity<ApiResponse<ChatService.ConversationView>> open(@AuthenticationPrincipal AuthUser me,
                                                                           @Valid @RequestBody ChatService.OpenInput body) {

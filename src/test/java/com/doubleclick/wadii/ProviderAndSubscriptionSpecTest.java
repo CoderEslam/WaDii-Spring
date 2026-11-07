@@ -106,6 +106,9 @@ class ProviderAndSubscriptionSpecTest extends IntegrationTest {
                 "phone", String.format("011%08d", System.nanoTime() % 100_000_000), "password", "SupportPass123!",
                 "roles", List.of("SUPPORT_ADMIN"))).ok().data();
         var login = api.post("/api/v1/auth/login", null, Map.of("email", support.path("email").asText(), "password", "SupportPass123!")).ok();
+        var staff = api.get("/api/v1/admin/users?admin=true&size=100", admin).ok().data().path("items");
+        assertThat(staff).isNotEmpty();
+        staff.forEach(u -> assertThat(u.path("admin").asBoolean()).isTrue());
         Actor supportAdmin = new Actor(login.data().path("token").asText(), support.path("id").asLong(), null, support.path("email").asText());
         var denied = api.post("/api/v1/admin/config/COMMISSION", supportAdmin,
                 Map.of("payload", Map.of("mode", "PERCENT", "value", 50, "payer", "PROVIDER"), "reason", "test"));

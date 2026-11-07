@@ -88,6 +88,11 @@ public class ChatService implements FileAccessRule {
         return PageResponse.of(conversations.forUser(user.id(), PageResponse.pageable(page, size)), c -> view(c, user.id()));
     }
 
+    @Transactional(readOnly = true)
+    public long unreadCount(AuthUser user) {
+        return messages.countUnreadForUser(user.id());
+    }
+
     @Transactional
     public List<MessageView> messages(AuthUser user, Long conversationId, Long afterId, int limit) {
         Conversation c = readable(user, conversationId);

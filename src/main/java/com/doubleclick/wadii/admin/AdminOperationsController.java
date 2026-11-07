@@ -143,6 +143,12 @@ public class AdminOperationsController {
         return ApiResponse.ok(disputes.adminList(status, type, page, size));
     }
 
+    @GetMapping("/disputes/{id}")
+    @PreAuthorize(Permissions.SUPPORT_OR_FINANCE)
+    public ResponseEntity<ApiResponse<DisputeRecorder.View>> dispute(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        return ApiResponse.ok(disputes.detail(me, id));
+    }
+
     @PostMapping("/disputes/{id}/assign")
     @PreAuthorize(Permissions.SUPPORT_OR_FINANCE)
     public ResponseEntity<ApiResponse<DisputeRecorder.View>> assign(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {

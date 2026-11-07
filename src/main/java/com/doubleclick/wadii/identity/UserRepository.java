@@ -28,8 +28,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
             select u from User u
             where (:q is null or lower(u.fullName) like :q or lower(u.email) like :q or u.phone like :q)
               and (:status is null or u.status = :status)
+              and (:admin is null or u.admin = :admin)
             """)
-    Page<User> search(@Param("q") String q, @Param("status") AccountStatus status, Pageable pageable);
+    Page<User> search(@Param("q") String q, @Param("status") AccountStatus status, @Param("admin") Boolean admin, Pageable pageable);
 
     long countByCreatedAtBetween(Instant from, Instant to);
 }

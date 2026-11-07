@@ -34,8 +34,9 @@ public class AdminAccountController {
     @PreAuthorize(Permissions.SUPPORT_ADMIN)
     public ResponseEntity<ApiResponse<PageResponse<AdminUserService.AdminUserView>>> users(
             @RequestParam(required = false) String q, @RequestParam(required = false) AccountStatus status,
+            @RequestParam(required = false) Boolean admin,
             @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer size) {
-        return ApiResponse.ok(users.list(q, status, page, size));
+        return ApiResponse.ok(users.list(q, status, admin, page, size));
     }
 
     @PostMapping("/users/{id}/suspend")

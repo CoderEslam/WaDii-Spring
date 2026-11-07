@@ -477,3 +477,54 @@ Summary = { "from","to",
 `RATING_NOT_ALLOWED` `RATING_ALREADY_EXISTS` `WARRANTY_NOT_FOUND` `WARRANTY_NOT_ACTIVE` `CLAIM_INVALID_STATE`
 `DISPUTE_NOT_FOUND` `DISPUTE_INVALID_STATE` `DISPUTE_ALREADY_OPEN` `LISTING_NOT_FOUND` `LISTING_INVALID_STATE`
 `LISTING_LIMIT_REACHED` `LEDGER_INVALID_STATE` `CONFIG_INVALID` `CONVERSATION_NOT_FOUND` `SUBSCRIPTION_RESTRICTED`
+
+---
+
+## 16. Clarifications (backend behaviour, authoritative)
+
+### Added endpoints
+| Method | Path | Result |
+|---|---|---|
+| GET | /conversations/unread-count | `{ "count": 2 }` unread messages across all my conversations |
+| GET | /admin/disputes/{id} | `Dispute` [SUPPORT or FINANCE] |
+| GET | /admin/users?admin=true | staff accounts only (`admin=false` = regular users) |
+
+### Shapes not spelled out above
+```
+GET /admin/provider-applications, GET /admin/providers  -> Page<ProviderApplication> (same shape as /provider/application, plus "statusReason"?)
+GET /admin/fraud-flags   -> Page<{ id, type:"PROVIDER_CANCELLATIONS|CUSTOMER_CANCELLATIONS|EXCESSIVE_DISPUTES|CASH_CONFLICT|DUPLICATE_LISTING|MANUAL",
+                                   subjectUserId, details, status:"OPEN|DISMISSED|ACTIONED", reviewedBy?, reviewNote?, reviewedAt?, createdAt }>
+GET /admin/audit         -> Page<{ id, actorId?, action, entityType, entityId?, details?, ip?, createdAt }>
+GET /admin/subscriptions -> Page<{ providerId, businessName, status, monthlyPrice, currentPeriodStart?, nextDueDate?, graceEndsOn?, exemptUntil?, lastPaidAt? }>
+WarrantyView.category    -> category code string, e.g. "BATTERIES"
+WarrantyClaim.disputeId? -> set once the claim is escalated; links to GET /disputes/{id}
+AdminUser.statusReason?  -> last suspension/ban/reactivation reason
+```
+
+### Dispute outcomes
+`outcome` ∈ `COMPLETE_ORDER | REOPEN_ORDER | CANCEL_ORDER | SET_FINAL_AMOUNT | CASH_CONFIRMED | CASH_NOT_COLLECTED | WARRANTY_HONORED | NO_ACTION`.
+Allowed per type: SERVICE_QUALITY → COMPLETE_ORDER, REOPEN_ORDER, CANCEL_ORDER, SET_FINAL_AMOUNT; INTERRUPTION → SET_FINAL_AMOUNT,
+CANCEL_ORDER; CASH_COLLECTION → CASH_CONFIRMED, CASH_NOT_COLLECTED; WARRANTY → WARRANTY_HONORED, NO_ACTION; others → NO_ACTION.
+Roles: SET_FINAL_AMOUNT, CASH_CONFIRMED, CASH_NOT_COLLECTED need FINANCE_ADMIN; every other outcome needs SUPPORT_ADMIN.
+`reject` (SUPPORT) restores the order's normal course (complaint dropped → completed, cash report stands, interruption proposal applies).
+
+### Return values
+- `POST /orders/{id}/charges/{cid}/approve|reject` return the `Charge`, not the order.
+- Listing actions (`submit`, `mark-sold`, `close`, admin `approve`/`reject`) return the updated `Listing`.
+- Admin mutations return the updated resource: users → `AdminUser`, applications/providers → `ProviderApplication`,
+  config → `ConfigVersion`, ledger → `LedgerEntry`, subscriptions → `ProviderSubscription`, fraud → flag, ratings → `Rating`.
+- `POST /conversations` returns 200 (get-or-create).
+
+### Rules
+- `cash/report` is allowed when the order is `IN_PROGRESS`, `PROVIDER_MARKED_COMPLETED`, `COMPLETED` or `INTERRUPTED`,
+  and cash is `NOT_DUE`, `DUE` or `PARTIAL`. The amount is the total received so far (not an increment).
+- `PUT /provider/offers/{id}` recomputes `expiresAt` from `validHours` (default from config), capped at the request deadline.
+- `GET /provider/policy` before any saved version returns the platform default terms with `version: 0`.
+- Provider sections other than `/provider/application*`, `/provider/profile` (GET), `/provider/subscription` and
+  `/provider/ledger` require `canOperate`; otherwise `PROVIDER_NOT_ACTIVE`.
+- `GET /admin/providers?status=` filters verified providers by `ACTIVE|SUSPENDED`.
+- `GET /admin/reports/summary?from=&to=` take `yyyy-MM-dd` (Africa/Cairo, inclusive); default = last 30 days.
+- Request `vehicle`: send `{vehicleId}` for a saved car, `{make, model, year, save}` for another one, or omit/null for none.
+- Validation `details` keys are Spring field paths, e.g. `items[0].categoryId`, `lines[0].servicePrice`.
+- Notification routing: `refType` `REQUEST` with type `NEW_MATCHING_REQUEST` is for the provider (open the provider
+  request view); other `REQUEST` notifications are for the customer. `OFFER` notifications are for providers.

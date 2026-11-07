@@ -57,9 +57,9 @@ public class AdminUserService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<AdminUserView> list(String q, AccountStatus status, Integer page, Integer size) {
+    public PageResponse<AdminUserView> list(String q, AccountStatus status, Boolean admin, Integer page, Integer size) {
         String pattern = q == null || q.isBlank() ? null : "%" + q.trim().toLowerCase(Locale.ROOT) + "%";
-        return PageResponse.of(users.search(pattern, status, PageResponse.pageable(page, size)), this::view);
+        return PageResponse.of(users.search(pattern, status, admin, PageResponse.pageable(page, size)), this::view);
     }
 
     @Transactional

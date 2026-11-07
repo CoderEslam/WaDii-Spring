@@ -55,6 +55,8 @@ class OrderLifecycleSpecTest extends IntegrationTest {
 
         Actor admin = api.admin();
         api.post("/api/v1/admin/disputes/" + dispute + "/assign", admin, null).ok();
+        assertThat(api.get("/api/v1/admin/disputes/" + dispute, admin).ok().data().path("status").asText()).isEqualTo("UNDER_REVIEW");
+        assertThat(api.get("/api/v1/admin/disputes/" + dispute, customer).status()).isEqualTo(403);
         var resolved = api.post("/api/v1/admin/disputes/" + dispute + "/resolve", admin,
                 Map.of("outcome", "SET_FINAL_AMOUNT", "note", "Only diagnosis done", "finalAmount", 120)).ok().data();
         assertThat(resolved.path("status").asText()).isEqualTo("RESOLVED");
