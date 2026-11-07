@@ -3,41 +3,32 @@ package com.doubleclick.wadii.chat;
 import com.doubleclick.wadii.common.persistence.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
-import java.time.Instant;
-
+/** Chat messages are kept (never edited) because they may become dispute evidence. */
+@Getter
 @Entity
 @Table(name = "messages")
-@Getter
-@Setter
 @NoArgsConstructor
 public class Message extends BaseEntity {
 
-    @Column(name = "conversation_id", nullable = false, updatable = false)
+    @Column(name = "conversation_id", nullable = false)
     private Long conversationId;
 
-    /** Null for SYSTEM messages. */
-    @Column(name = "sender_id", updatable = false)
+    @Column(name = "sender_id", nullable = false)
     private Long senderId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, updatable = false)
-    private MessageType type;
+    private String body;
 
-    @Column(updatable = false)
-    private String text;
-
-    @Column(name = "file_key", updatable = false)
+    @Column(name = "file_key")
     private String fileKey;
 
-    @Column(name = "content_type", updatable = false)
-    private String contentType;
-
-    private Instant readAt;
+    public Message(Long conversationId, Long senderId, String body, String fileKey) {
+        this.conversationId = conversationId;
+        this.senderId = senderId;
+        this.body = body;
+        this.fileKey = fileKey;
+    }
 }

@@ -16,7 +16,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** FCM HTTP v1 sender. Disabled (with a warning) when no credentials file is configured. */
+/**
+ * FCM HTTP v1 sender. Push is only a delivery channel: failures are logged and never affect the business action.
+ * It is disabled unless {@code wadii.fcm.enabled=true} and a readable credentials file is configured.
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -28,30 +31,17 @@ public class PushGateway {
     private volatile GoogleCredentials credentials;
     private volatile boolean unavailable;
 
-    /** Visible notification. */
-    public void send(Long userId, String title, String body, String type, Long orderId) {
-        Map<String, String> data = new LinkedHashMap<>();
-        data.put("type", type);
-        if (orderId != null) data.put("orderId", String.valueOf(orderId));
-        Map<String, Object> message = new LinkedHashMap<>();
-        message.put("notification", Map.of("title", title, "body", body));
-        message.put("data", data);
-        deliver(userId, message);
-    }
-
-    /** Data-only message (call signaling) handled by the app in the background. */
-    public void sendData(Long userId, Map<String, String> data) {
-        deliver(userId, new LinkedHashMap<>(Map.of("data", data)));
-    }
-
-    private void deliver(Long userId, Map<String, Object> message) {
+    public void send(Long userId, String title, String body, Map<String, String> data) {
         if (!properties.getFcm().isEnabled()) return;
         try {
             String token = userRepository.findById(userId).map(u -> u.getFcmToken()).orElse(null);
             if (token == null || token.isBlank()) return;
             String accessToken = accessToken();
             if (accessToken == null) return;
+            Map<String, Object> message = new LinkedHashMap<>();
             message.put("token", token);
+            message.put("notification", Map.of("title", title, "body", body));
+            message.put("data", data);
             restClient.post()
                     .uri("https://fcm.googleapis.com/v1/projects/{p}/messages:send", properties.getFcm().getProjectId())
                     .contentType(MediaType.APPLICATION_JSON)

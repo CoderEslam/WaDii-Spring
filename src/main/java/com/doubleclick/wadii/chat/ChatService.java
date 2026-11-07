@@ -4,156 +4,188 @@ import com.doubleclick.wadii.common.api.PageResponse;
 import com.doubleclick.wadii.common.error.BusinessException;
 import com.doubleclick.wadii.common.error.ErrorCode;
 import com.doubleclick.wadii.common.security.AuthUser;
-import com.doubleclick.wadii.notification.PushGateway;
-import com.doubleclick.wadii.storage.FileCategory;
-import com.doubleclick.wadii.storage.FileStorageService;
-import com.doubleclick.wadii.storage.StoredFile;
+import com.doubleclick.wadii.files.FileAccessRule;
+import com.doubleclick.wadii.files.FilePurpose;
+import com.doubleclick.wadii.files.FileService;
+import com.doubleclick.wadii.identity.AdminRole;
+import com.doubleclick.wadii.identity.User;
+import com.doubleclick.wadii.identity.UserRepository;
+import com.doubleclick.wadii.listing.Listing;
+import com.doubleclick.wadii.listing.ListingRepository;
+import com.doubleclick.wadii.notification.NotificationService;
+import com.doubleclick.wadii.notification.NotificationType;
+import com.doubleclick.wadii.order.ServiceOrder;
+import com.doubleclick.wadii.order.ServiceOrderRepository;
+import com.doubleclick.wadii.provider.Provider;
+import com.doubleclick.wadii.provider.ProviderRepository;
+import com.doubleclick.wadii.request.RequestTargetRepository;
+import com.doubleclick.wadii.request.ServiceRequest;
+import com.doubleclick.wadii.request.ServiceRequestRepository;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.Resource;
-import org.springframework.data.domain.Sort;
-import org.springframework.http.ResponseEntity;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Map;
+import java.util.List;
 
-/**
- * Order chat. Messages are persisted; delivery is STOMP {@code /user/queue/messages} to both participants after
- * commit plus an FCM push to the recipient. Chat messages are not copied into the notification inbox.
- */
+/** Conversations between the parties of an order, a request or a listing. Support staff may read any thread. */
 @Service
 @RequiredArgsConstructor
-public class ChatService {
+public class ChatService implements FileAccessRule {
 
-    private final ConversationService conversationService;
-    private final ConversationRepository conversationRepository;
-    private final MessageRepository messageRepository;
-    private final FileStorageService storage;
-    private final SimpMessagingTemplate messaging;
-    private final PushGateway pushGateway;
+    public static final String FILE_REF = "CONVERSATION";
+
+    private final ConversationRepository conversations;
+    private final MessageRepository messages;
+    private final ServiceOrderRepository orders;
+    private final ServiceRequestRepository requests;
+    private final RequestTargetRepository targets;
+    private final ProviderRepository providers;
+    private final ListingRepository listings;
+    private final UserRepository users;
+    private final FileService files;
+    private final NotificationService notifications;
     private final Clock clock;
 
-    public record ConversationView(Long id, Long orderId, Long customerId, Long providerId, Long providerUserId,
-                                   Instant lastMessageAt, String lastMessagePreview, Instant createdAt) {
-        static ConversationView of(Conversation c) {
-            return new ConversationView(c.getId(), c.getOrderId(), c.getCustomerId(), c.getProviderId(), c.getProviderUserId(),
-                    c.getLastMessageAt(), c.getLastMessagePreview(), c.getCreatedAt());
-        }
+    public record OpenInput(@NotNull Conversation.Kind kind, @NotNull Long refId, Long providerId) {
     }
 
-    public record MessageView(Long id, Long conversationId, Long senderId, MessageType type, String text, boolean hasFile,
-                              String contentType, Instant createdAt, Instant readAt) {
-        public static MessageView of(Message m) {
-            return new MessageView(m.getId(), m.getConversationId(), m.getSenderId(), m.getType(), m.getText(),
-                    m.getFileKey() != null, m.getContentType(), m.getCreatedAt(), m.getReadAt());
-        }
+    public record SendInput(@Size(max = 4000) String body, String fileKey) {
     }
 
-    @Transactional(readOnly = true)
-    public PageResponse<ConversationView> conversations(AuthUser me, Integer page, Integer size) {
-        var pageable = PageResponse.pageable(page, size, Sort.by(Sort.Direction.DESC, "lastMessageAt"));
-        return PageResponse.of(conversationRepository.findForUser(me.id(), pageable), ConversationView::of);
+    public record ConversationView(Long id, Conversation.Kind kind, Long refId, String title, String counterpartName,
+                                   String lastMessage, Instant lastMessageAt, long unread) {
     }
 
-    @Transactional(readOnly = true)
-    public ConversationView forOrder(AuthUser me, Long orderId) {
-        Conversation c = conversationRepository.findByOrderId(orderId).orElseThrow(() -> BusinessException.notFound(ErrorCode.CONVERSATION_NOT_FOUND));
-        return ConversationView.of(conversationService.requireReader(me, c.getId()));
-    }
-
-    @Transactional(readOnly = true)
-    public PageResponse<MessageView> messages(AuthUser me, Long conversationId, Integer page, Integer size) {
-        conversationService.requireReader(me, conversationId);
-        var pageable = PageResponse.pageable(page, size, Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")));
-        return PageResponse.of(messageRepository.findByConversationId(conversationId, pageable), MessageView::of);
+    public record MessageView(Long id, Long senderId, boolean mine, String body, String fileKey, Instant createdAt) {
     }
 
     @Transactional
-    public MessageView sendText(AuthUser me, Long conversationId, String text) {
-        if (text == null || text.isBlank()) throw BusinessException.validation("text must not be blank");
-        if (text.length() > 4000) throw BusinessException.validation("text is too long");
-        Conversation c = conversationService.requireParticipant(me, conversationId);
-        Message m = new Message();
-        m.setConversationId(c.getId());
-        m.setSenderId(me.id());
-        m.setType(MessageType.TEXT);
-        m.setText(text.trim());
-        return deliver(c, messageRepository.save(m), text.trim());
-    }
-
-    @Transactional
-    public MessageView sendMedia(AuthUser me, Long conversationId, MultipartFile file, String caption) {
-        Conversation c = conversationService.requireParticipant(me, conversationId);
-        StoredFile stored = storage.store(file, FileCategory.CHAT_MEDIA);
-        Message m = new Message();
-        m.setConversationId(c.getId());
-        m.setSenderId(me.id());
-        m.setType(stored.contentType().startsWith("audio/") ? MessageType.AUDIO : MessageType.IMAGE);
-        m.setText(caption == null || caption.isBlank() ? null : caption.trim());
-        m.setFileKey(stored.key());
-        m.setContentType(stored.contentType());
-        return deliver(c, messageRepository.save(m), m.getType() == MessageType.AUDIO ? "Voice message" : "Photo");
-    }
-
-    @Transactional
-    public int markRead(AuthUser me, Long conversationId) {
-        Conversation c = conversationService.requireParticipant(me, conversationId);
-        int updated = messageRepository.markRead(conversationId, me.id(), clock.instant());
-        if (updated > 0) {
-            afterCommit(() -> messaging.convertAndSendToUser(String.valueOf(c.otherParticipant(me.id())), "/queue/read-receipts",
-                    Map.of("conversationId", conversationId, "readBy", me.id())));
+    public ConversationView open(AuthUser user, OpenInput input) {
+        Long other = counterpart(user, input);
+        if (other.equals(user.id())) {
+            throw BusinessException.validation("You cannot start a conversation with yourself.");
         }
-        return updated;
-    }
-
-    public void typing(AuthUser me, Long conversationId, boolean typing) {
-        Conversation c = conversationService.requireParticipant(me, conversationId);
-        messaging.convertAndSendToUser(String.valueOf(c.otherParticipant(me.id())), "/queue/typing",
-                Map.of("conversationId", conversationId, "userId", me.id(), "typing", typing));
-    }
-
-    @Transactional(readOnly = true)
-    public long unreadCount(AuthUser me) {
-        return messageRepository.countUnread(me.id());
-    }
-
-    @Transactional(readOnly = true)
-    public ResponseEntity<Resource> mediaFile(AuthUser me, Long messageId) {
-        Message m = messageRepository.findById(messageId).orElseThrow(() -> BusinessException.notFound(ErrorCode.NOT_FOUND));
-        conversationService.requireReader(me, m.getConversationId());
-        if (m.getFileKey() == null) throw BusinessException.notFound(ErrorCode.NOT_FOUND);
-        return storage.servePrivate(m.getFileKey(), m.getContentType());
-    }
-
-    private MessageView deliver(Conversation c, Message m, String preview) {
-        c.setLastMessageAt(m.getCreatedAt());
-        c.setLastMessagePreview(preview.length() > 200 ? preview.substring(0, 200) : preview);
-        MessageView view = MessageView.of(m);
-        Long recipient = c.otherParticipant(m.getSenderId());
-        afterCommit(() -> {
-            messaging.convertAndSendToUser(String.valueOf(recipient), "/queue/messages", view);
-            messaging.convertAndSendToUser(String.valueOf(m.getSenderId()), "/queue/messages", view);
-            pushGateway.send(recipient, "New message", c.getLastMessagePreview(), "NEW_MESSAGE", c.getOrderId());
+        Long a = Math.min(user.id(), other);
+        Long b = Math.max(user.id(), other);
+        Conversation c = conversations.findByKindAndRefIdAndUserAAndUserB(input.kind(), input.refId(), a, b).orElseGet(() -> {
+            Conversation fresh = new Conversation();
+            fresh.setKind(input.kind());
+            fresh.setRefId(input.refId());
+            fresh.setUserA(a);
+            fresh.setUserB(b);
+            return conversations.save(fresh);
         });
-        return view;
+        return view(c, user.id());
     }
 
-    private static void afterCommit(Runnable r) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    r.run();
-                }
-            });
-        } else {
-            r.run();
+    @Transactional(readOnly = true)
+    public PageResponse<ConversationView> list(AuthUser user, Integer page, Integer size) {
+        return PageResponse.of(conversations.forUser(user.id(), PageResponse.pageable(page, size)), c -> view(c, user.id()));
+    }
+
+    @Transactional
+    public List<MessageView> messages(AuthUser user, Long conversationId, Long afterId, int limit) {
+        Conversation c = readable(user, conversationId);
+        List<Message> list = messages.after(conversationId, afterId == null ? 0 : afterId, PageRequest.of(0, Math.min(Math.max(limit, 1), 100)));
+        if (!list.isEmpty() && c.hasParticipant(user.id())) {
+            c.markRead(user.id(), list.get(list.size() - 1).getId());
         }
+        return list.stream().map(m -> new MessageView(m.getId(), m.getSenderId(), m.getSenderId().equals(user.id()), m.getBody(),
+                m.getFileKey(), m.getCreatedAt())).toList();
+    }
+
+    @Transactional
+    public MessageView send(AuthUser user, Long conversationId, SendInput input) {
+        Conversation c = conversations.findById(conversationId).filter(x -> x.hasParticipant(user.id()))
+                .orElseThrow(() -> BusinessException.of(ErrorCode.CONVERSATION_NOT_FOUND));
+        boolean hasBody = input.body() != null && !input.body().isBlank();
+        if (!hasBody && input.fileKey() == null) {
+            throw BusinessException.validation("A message needs text or a file.");
+        }
+        if (input.fileKey() != null) {
+            files.attach(user.id(), List.of(input.fileKey()), FilePurpose.CHAT, FILE_REF, conversationId);
+        }
+        Message m = messages.save(new Message(conversationId, user.id(), hasBody ? input.body().trim() : null, input.fileKey()));
+        c.setLastMessageAt(Instant.now(clock));
+        c.markRead(user.id(), m.getId());
+        notifications.notify(c.other(user.id()), NotificationType.NEW_MESSAGE, "New message from " + user.fullName(),
+                hasBody ? preview(input.body()) : "Sent a file", "CONVERSATION", conversationId);
+        return new MessageView(m.getId(), m.getSenderId(), true, m.getBody(), m.getFileKey(), m.getCreatedAt());
+    }
+
+    @Override
+    public boolean supports(String refType) {
+        return FILE_REF.equals(refType);
+    }
+
+    @Override
+    public boolean canRead(AuthUser user, String refType, Long refId) {
+        return conversations.findById(refId).map(c -> c.hasParticipant(user.id())).orElse(false);
+    }
+
+    private Conversation readable(AuthUser user, Long id) {
+        Conversation c = conversations.findById(id).orElseThrow(() -> BusinessException.of(ErrorCode.CONVERSATION_NOT_FOUND));
+        if (!c.hasParticipant(user.id()) && !user.hasAdminRole(AdminRole.SUPPORT_ADMIN)) {
+            throw BusinessException.of(ErrorCode.CONVERSATION_NOT_FOUND);
+        }
+        return c;
+    }
+
+    /** Resolves the other participant and checks the caller is allowed to talk about this subject. */
+    private Long counterpart(AuthUser user, OpenInput input) {
+        return switch (input.kind()) {
+            case ORDER -> {
+                ServiceOrder o = orders.findById(input.refId()).orElseThrow(() -> BusinessException.of(ErrorCode.ORDER_NOT_FOUND));
+                if (o.getCustomerId().equals(user.id())) yield o.getProviderUserId();
+                if (o.getProviderUserId().equals(user.id())) yield o.getCustomerId();
+                throw BusinessException.of(ErrorCode.ORDER_NOT_FOUND);
+            }
+            case REQUEST -> {
+                ServiceRequest r = requests.findById(input.refId()).orElseThrow(() -> BusinessException.of(ErrorCode.REQUEST_NOT_FOUND));
+                if (r.getCustomerId().equals(user.id())) {
+                    if (input.providerId() == null || targets.findByRequestIdAndProviderId(r.getId(), input.providerId()).isEmpty()) {
+                        throw BusinessException.validation("providerId must be a provider invited to this request.");
+                    }
+                    yield providers.findById(input.providerId()).map(Provider::getUserId).orElseThrow();
+                }
+                Provider p = providers.findByUserId(user.id()).orElseThrow(() -> BusinessException.of(ErrorCode.REQUEST_NOT_FOUND));
+                if (targets.findByRequestIdAndProviderId(r.getId(), p.getId()).isEmpty()) {
+                    throw BusinessException.of(ErrorCode.REQUEST_NOT_FOUND);
+                }
+                yield r.getCustomerId();
+            }
+            case LISTING -> {
+                Listing l = listings.findById(input.refId())
+                        .filter(x -> x.getStatus() == Listing.Status.ACTIVE || x.getStatus() == Listing.Status.SOLD)
+                        .orElseThrow(() -> BusinessException.of(ErrorCode.LISTING_NOT_FOUND));
+                yield l.getSellerId();
+            }
+        };
+    }
+
+    private ConversationView view(Conversation c, Long me) {
+        Long otherId = c.other(me);
+        String counterpart = providers.findByUserId(otherId).filter(p -> c.getKind() != Conversation.Kind.LISTING)
+                .filter(Provider::isVerified).map(Provider::getBusinessName)
+                .orElseGet(() -> users.findById(otherId).map(User::getFullName).orElse(""));
+        String title = switch (c.getKind()) {
+            case ORDER -> "Order #" + c.getRefId();
+            case REQUEST -> "Request #" + c.getRefId();
+            case LISTING -> listings.findById(c.getRefId()).map(Listing::getTitle).orElse("Listing");
+        };
+        var last = messages.findFirstByConversationIdOrderByIdDesc(c.getId()).orElse(null);
+        long unread = c.hasParticipant(me) ? messages.countUnread(c.getId(), c.lastReadBy(me), me) : 0;
+        return new ConversationView(c.getId(), c.getKind(), c.getRefId(), title, counterpart,
+                last == null ? null : last.getBody() != null ? preview(last.getBody()) : "File", c.getLastMessageAt(), unread);
+    }
+
+    private static String preview(String body) {
+        String t = body.trim();
+        return t.length() > 120 ? t.substring(0, 117) + "..." : t;
     }
 }

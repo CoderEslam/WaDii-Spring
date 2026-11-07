@@ -10,27 +10,27 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
-import org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /** HTTP-level helpers. Everything goes through MockMvc and the real security filter chain. */
 @TestComponent
 public class TestApi {
 
-    public static final BigDecimal CAIRO_LAT = new BigDecimal("30.044420");
-    public static final BigDecimal CAIRO_LNG = new BigDecimal("31.235712");
     public static final byte[] PNG = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D, 'I', 'H', 'D', 'R', 0, 1, 2, 3};
+    public static final long CAIRO = 1L;
+    public static final long GIZA = 2L;
 
-    private static final AtomicInteger SEQ = new AtomicInteger();
+    private static final AtomicInteger SEQ = new AtomicInteger((int) (System.nanoTime() % 1_000_000));
 
     @Autowired
     MockMvc mvc;
@@ -48,36 +48,39 @@ public class TestApi {
         public String code() {
             return body.path("code").asText(null);
         }
+
+        public Result ok() {
+            assertThat(status).as(body.toString()).isBetween(200, 299);
+            return this;
+        }
     }
 
     // ---------------------------------------------------------------- raw calls
 
-    public Result call(HttpMethod method, String url, Actor actor, Object body) {
-        MockHttpServletRequestBuilder req = MockMvcRequestBuilders.request(method, url).contentType(MediaType.APPLICATION_JSON);
-        return exec(req, actor, body);
-    }
-
     public Result get(String url, Actor actor) {
-        return call(HttpMethod.GET, url, actor, null);
+        return exec(MockMvcRequestBuilders.request(HttpMethod.GET, url), actor, null);
     }
 
     public Result post(String url, Actor actor, Object body) {
-        return call(HttpMethod.POST, url, actor, body);
+        return exec(MockMvcRequestBuilders.request(HttpMethod.POST, url).contentType(MediaType.APPLICATION_JSON), actor, body);
     }
 
     public Result put(String url, Actor actor, Object body) {
-        return call(HttpMethod.PUT, url, actor, body);
+        return exec(MockMvcRequestBuilders.request(HttpMethod.PUT, url).contentType(MediaType.APPLICATION_JSON), actor, body);
     }
 
     public Result patch(String url, Actor actor, Object body) {
-        return call(HttpMethod.PATCH, url, actor, body);
+        return exec(MockMvcRequestBuilders.request(HttpMethod.PATCH, url).contentType(MediaType.APPLICATION_JSON), actor, body);
     }
 
-    public Result multipart(String url, Actor actor, String filename, String contentType, byte[] content, Map<String, String> params) {
-        MockMultipartHttpServletRequestBuilder req = MockMvcRequestBuilders.multipart(url)
-                .file(new MockMultipartFile("file", filename, contentType, content));
-        params.forEach(req::param);
-        return exec(req, actor, null);
+    public Result delete(String url, Actor actor) {
+        return exec(MockMvcRequestBuilders.request(HttpMethod.DELETE, url), actor, null);
+    }
+
+    public String upload(Actor actor, String purpose) {
+        var req = MockMvcRequestBuilders.multipart("/api/v1/files")
+                .file(new MockMultipartFile("file", "photo.png", "image/png", PNG)).param("purpose", purpose);
+        return exec(req, actor, null).ok().data().path("key").asText();
     }
 
     public int rawStatus(MockHttpServletRequestBuilder req, Actor actor) {
@@ -95,7 +98,7 @@ public class TestApi {
             if (body != null) req.content(json.writeValueAsBytes(body));
             MvcResult r = mvc.perform(req).andReturn();
             String content = r.getResponse().getContentAsString();
-            JsonNode node = content.isBlank() ? json.createObjectNode() : json.readTree(content);
+            JsonNode node = content.isBlank() || !content.trim().startsWith("{") ? json.createObjectNode() : json.readTree(content);
             return new Result(r.getResponse().getStatus(), node);
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -105,136 +108,119 @@ public class TestApi {
     // ---------------------------------------------------------------- identities
 
     public Actor admin() {
-        Result r = post("/api/v1/auth/login", null, Map.of("email", "admin@wadii.test", "password", "AdminPass123!"));
+        Result r = post("/api/v1/auth/login", null, Map.of("email", "admin@wadii.test", "password", "AdminPass123!")).ok();
         return new Actor(r.data().path("token").asText(), r.data().path("user").path("id").asLong(), null, "admin@wadii.test");
     }
 
-    public long anyCityId() {
-        Long countryId = get("/api/v1/catalog/countries", null).data().get(0).path("id").asLong();
-        Long provinceId = get("/api/v1/catalog/countries/" + countryId + "/provinces", null).data().get(0).path("id").asLong();
-        return get("/api/v1/catalog/provinces/" + provinceId + "/cities", null).data().get(0).path("id").asLong();
-    }
-
-    public Result register(String email, int userType, String providerName) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("firstName", "Test");
-        body.put("lastName", "User");
-        body.put("email", email);
-        body.put("password", "Password123");
-        body.put("phone", "+201000000000");
-        body.put("cityId", anyCityId());
-        body.put("userType", userType);
-        if (providerName != null) body.put("providerName", providerName);
-        return post("/api/v1/auth/register", null, body);
-    }
-
-    public static String uniqueEmail(String prefix) {
-        return prefix + "-" + SEQ.incrementAndGet() + "-" + UUID.randomUUID().toString().substring(0, 8) + "@test.wadii";
-    }
-
     public Actor customer() {
-        String email = uniqueEmail("customer");
-        Result r = register(email, 0, null);
-        if (r.status() != 201) throw new IllegalStateException("register failed: " + r.body());
+        int n = SEQ.incrementAndGet();
+        String email = "user" + n + "@wadii.test";
+        String phone = String.format("010%08d", n % 100_000_000);
+        Result r = post("/api/v1/auth/register", null, Map.of("fullName", "User " + n, "email", email, "phone", phone,
+                "password", "Password123")).ok();
         return new Actor(r.data().path("token").asText(), r.data().path("user").path("id").asLong(), null, email);
     }
 
-    /** Registered provider, NOT verified yet. */
-    public Actor pendingProvider(String name) {
-        String email = uniqueEmail("provider");
-        Result r = register(email, 1, name);
-        if (r.status() != 201) throw new IllegalStateException("register failed: " + r.body());
-        return new Actor(r.data().path("token").asText(), r.data().path("user").path("id").asLong(), r.data().path("providerId").asLong(), email);
-    }
-
-    /** Verified provider offering {@code serviceIds}, one branch at the given location (no published hours), receiving accounts set. */
-    public Actor verifiedProvider(List<Long> serviceIds, BigDecimal lat, BigDecimal lng) {
-        Actor p = pendingProvider("Provider " + SEQ.incrementAndGet());
-        expectOk(put("/api/v1/providers/me/services", p, Map.of("serviceIds", serviceIds)));
-        Map<String, Object> branch = new LinkedHashMap<>();
-        branch.put("name", "Main");
-        branch.put("address", "Cairo");
-        branch.put("latitude", lat);
-        branch.put("longitude", lng);
-        expectStatus(201, post("/api/v1/providers/me/branches", p, branch));
-        expectOk(put("/api/v1/providers/me/payment-accounts/VODAFONE_CASH", p, Map.of("accountName", "Shop", "accountIdentifier", "01011111111")));
-        expectOk(put("/api/v1/providers/me/payment-accounts/INSTAPAY", p, Map.of("accountName", "Shop", "accountIdentifier", "shop@instapay")));
-        expectOk(post("/api/v1/admin/providers/" + p.providerId() + "/verification", admin(), Map.of("decision", "VERIFIED")));
-        return p;
-    }
-
-    public Actor verifiedProvider(List<Long> serviceIds) {
-        return verifiedProvider(serviceIds, CAIRO_LAT, CAIRO_LNG);
-    }
-
-    /** A fresh catalog service so each test controls exactly which providers match. */
-    public long newService() {
-        Result r = post("/api/v1/catalog/services", admin(), Map.of("name", "svc-" + UUID.randomUUID()));
-        expectStatus(201, r);
-        return r.data().path("id").asLong();
-    }
-
-    // ---------------------------------------------------------------- orders / offers
-
-    public Result createOrder(Actor customer, List<Long> serviceIds, Long providerId) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("carDescription", "Toyota Corolla 2018");
-        body.put("requestedDate", LocalDate.now().plusDays(2).toString());
-        body.put("latitude", CAIRO_LAT);
-        body.put("longitude", CAIRO_LNG);
-        body.put("serviceIds", serviceIds);
-        body.put("spareParts", List.of("Oil filter"));
-        if (providerId != null) body.put("providerId", providerId);
-        return post("/api/v1/orders", customer, body);
-    }
-
-    public long order(Actor customer, List<Long> serviceIds, Long providerId) {
-        Result r = createOrder(customer, serviceIds, providerId);
-        expectStatus(201, r);
-        return r.data().path("id").asLong();
-    }
-
-    public Result submitOffer(Actor provider, long orderId, BigDecimal labor, String expiresAt) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("orderId", orderId);
-        body.put("description", "Full service");
-        body.put("laborCost", labor);
-        body.put("estimatedDurationMinutes", 90);
-        if (expiresAt != null) body.put("expiresAt", expiresAt);
-        return post("/api/v1/responses", provider, body);
-    }
-
-    public long offer(Actor provider, long orderId, BigDecimal labor) {
-        Result r = submitOffer(provider, orderId, labor, null);
-        expectStatus(201, r);
-        return r.data().path("id").asLong();
-    }
-
-    /** Order with one accepted offer; returns {orderId, responseId, paymentId}. */
-    public long[] acceptedOrder(Actor customer, Actor provider, List<Long> services, BigDecimal price) {
-        long orderId = order(customer, services, provider.providerId());
-        long responseId = offer(provider, orderId, price);
-        Result accepted = post("/api/v1/responses/" + responseId + "/accept", customer, null);
-        expectOk(accepted);
-        return new long[]{orderId, responseId, accepted.data().path("paymentId").asLong()};
-    }
-
-    public List<Long> ids(JsonNode items) {
+    /** A verified provider with one branch in Cairo (no coordinates, area matching) offering the given category codes. */
+    public Actor provider(String... categoryCodes) {
+        Actor user = customer();
         List<Long> ids = new ArrayList<>();
-        items.forEach(n -> ids.add(n.path("id").asLong()));
-        return ids;
+        for (String code : categoryCodes) ids.add(categoryId(code));
+        put("/api/v1/provider/application", user, Map.of("businessName", "Garage " + user.userId(), "phone", "0223456789",
+                "areaId", CAIRO, "address", "Nasr City", "categoryIds", ids)).ok();
+        String key = upload(user, "PROVIDER_DOCUMENT");
+        post("/api/v1/provider/application/documents", user, Map.of("type", "COMMERCIAL_REGISTER", "fileKey", key)).ok();
+        long providerId = post("/api/v1/provider/application/submit", user, null).ok().data().path("providerId").asLong();
+        post("/api/v1/admin/provider-applications/" + providerId + "/approve", admin(), null).ok();
+        Actor provider = new Actor(user.token(), user.userId(), providerId, user.email());
+        post("/api/v1/provider/branches", provider, branch(4)).ok();
+        return provider;
     }
 
-    // ---------------------------------------------------------------- assertions
-
-    public static Result expectOk(Result r) {
-        return expectStatus(200, r);
+    public Map<String, Object> branch(int maxBookings) {
+        Map<String, Object> b = new LinkedHashMap<>();
+        b.put("name", "Main branch");
+        b.put("areaId", CAIRO);
+        b.put("address", "Abbas El Akkad");
+        b.put("phone", "0223456789");
+        b.put("slotMinutes", 60);
+        b.put("maxBookingsPerSlot", maxBookings);
+        b.put("active", true);
+        return b;
     }
 
-    public static Result expectStatus(int status, Result r) {
-        if (r.status() != status) {
-            throw new AssertionError("Expected HTTP " + status + " but got " + r.status() + ": " + r.body());
+    public long branchId(Actor provider) {
+        return get("/api/v1/provider/branches", provider).ok().data().get(0).path("id").asLong();
+    }
+
+    public long categoryId(String code) {
+        for (JsonNode c : get("/api/v1/catalog/categories", null).ok().data()) {
+            if (c.path("code").asText().equals(code)) return c.path("id").asLong();
         }
-        return r;
+        throw new IllegalArgumentException(code);
+    }
+
+    // ---------------------------------------------------------------- marketplace helpers
+
+    /** Creates a request with a vehicle in Cairo for the given category codes; returns the request detail. */
+    public JsonNode request(Actor customer, String... categoryCodes) {
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (String code : categoryCodes) items.add(Map.of("categoryId", categoryId(code), "description", "Need " + code));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("vehicle", Map.of("make", "Chevrolet", "model", "Lanos", "year", 2016, "save", true));
+        body.put("items", items);
+        body.put("areaId", CAIRO);
+        body.put("address", "Nasr City");
+        return post("/api/v1/requests", customer, body).ok().data();
+    }
+
+    public long itemId(JsonNode request, String code) {
+        for (JsonNode i : request.path("items")) {
+            if (i.path("category").path("code").asText().equals(code)) return i.path("id").asLong();
+        }
+        throw new IllegalArgumentException(code);
+    }
+
+    public Map<String, Object> line(long itemId, int price, boolean warranty) {
+        Map<String, Object> l = new LinkedHashMap<>();
+        l.put("serviceItemId", itemId);
+        l.put("available", true);
+        l.put("servicePrice", price);
+        l.put("laborCost", 50);
+        l.put("discount", 0);
+        l.put("parts", List.of(Map.of("name", "Part", "quantity", 2, "unitPrice", 25)));
+        l.put("estimatedMinutes", 45);
+        l.put("warranty", warranty ? Map.of("provided", true, "durationDays", 90, "coverage", "PARTS_AND_LABOR")
+                : Map.of("provided", false));
+        return l;
+    }
+
+    public JsonNode offer(Actor provider, long requestId, List<Map<String, Object>> lines) {
+        return post("/api/v1/provider/requests/" + requestId + "/offer", provider,
+                Map.of("branchId", branchId(provider), "lines", lines)).ok().data();
+    }
+
+    public long lineId(JsonNode offer, long itemId) {
+        for (JsonNode l : offer.path("lines")) {
+            if (l.path("serviceItemId").asLong() == itemId) return l.path("lineId").asLong();
+        }
+        throw new IllegalArgumentException("item " + itemId);
+    }
+
+    public JsonNode accept(Actor customer, long requestId, long itemId, long lineId) {
+        return post("/api/v1/requests/" + requestId + "/items/" + itemId + "/accept", customer, Map.of("lineId", lineId)).ok().data();
+    }
+
+    public JsonNode accept(Actor customer, long requestId, long itemId, long lineId, Instant appointmentStart) {
+        return post("/api/v1/requests/" + requestId + "/items/" + itemId + "/accept", customer,
+                Map.of("lineId", lineId, "appointmentStart", appointmentStart.toString())).ok().data();
+    }
+
+    public void config(String key, Map<String, Object> payload) {
+        post("/api/v1/admin/config/" + key, admin(), Map.of("payload", payload, "reason", "test")).ok();
+    }
+
+    public static BigDecimal money(JsonNode node) {
+        return node.decimalValue().setScale(2, java.math.RoundingMode.HALF_UP);
     }
 }

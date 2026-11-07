@@ -1,42 +1,57 @@
 package com.doubleclick.wadii.warranty;
 
-import com.doubleclick.wadii.common.persistence.BaseEntity;
+import com.doubleclick.wadii.common.persistence.AuditedEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.Instant;
 
-@Entity
-@Table(name = "warranty_claims")
+/** A customer's claim under an active warranty; the provider answers, and a disagreement escalates to a dispute. */
 @Getter
 @Setter
-@NoArgsConstructor
-public class WarrantyClaim extends BaseEntity {
+@Entity
+@Table(name = "warranty_claims")
+public class WarrantyClaim extends AuditedEntity {
+
+    public enum Status { OPEN, ACCEPTED, REJECTED, ESCALATED, RESOLVED }
 
     @Column(name = "warranty_id", nullable = false, updatable = false)
     private Long warrantyId;
 
-    @Column(nullable = false, updatable = false)
-    private String description;
+    @Column(name = "order_id", nullable = false, updatable = false)
+    private Long orderId;
+
+    @Column(name = "customer_id", nullable = false, updatable = false)
+    private Long customerId;
+
+    @Column(name = "provider_id", nullable = false, updatable = false)
+    private Long providerId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private ClaimStatus status = ClaimStatus.SUBMITTED;
+    private Status status = Status.OPEN;
 
-    @Column(name = "provider_response")
-    private String providerResponse;
+    @Column(nullable = false)
+    private String description;
+
+    @Column(name = "evidence_keys")
+    private String evidenceKeys;
+
+    @Column(name = "provider_note")
+    private String providerNote;
+
+    @Column(name = "responded_at")
+    private Instant respondedAt;
 
     @Column(name = "dispute_id")
     private Long disputeId;
 
-    @Column(name = "created_by", nullable = false, updatable = false)
-    private Long createdBy;
-
-    private Instant decidedAt;
+    @Version
+    private long version;
 }

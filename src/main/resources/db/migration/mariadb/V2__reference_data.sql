@@ -1,50 +1,27 @@
--- Reference data needed in every environment. No users or credentials here.
--- Same rows as db/migration/postgresql; derived tables use UNION ALL instead of VALUES column aliases.
+-- Reference data shared by every environment. Vehicle requirements are the starting assumptions from the
+-- business rules; admins change them per category.
 
-INSERT INTO countries (name) VALUES ('Egypt');
+INSERT INTO areas (name_en, name_ar) VALUES
+ ('Cairo', 'القاهرة'), ('Giza', 'الجيزة'), ('Alexandria', 'الإسكندرية'), ('Qalyubia', 'القليوبية'),
+ ('Dakahlia', 'الدقهلية'), ('Sharqia', 'الشرقية'), ('Gharbia', 'الغربية'), ('Monufia', 'المنوفية'),
+ ('Beheira', 'البحيرة'), ('Kafr El Sheikh', 'كفر الشيخ'), ('Damietta', 'دمياط'), ('Port Said', 'بورسعيد'),
+ ('Ismailia', 'الإسماعيلية'), ('Suez', 'السويس'), ('Faiyum', 'الفيوم'), ('Beni Suef', 'بني سويف'),
+ ('Minya', 'المنيا'), ('Asyut', 'أسيوط'), ('Sohag', 'سوهاج'), ('Qena', 'قنا'), ('Luxor', 'الأقصر'),
+ ('Aswan', 'أسوان'), ('Red Sea', 'البحر الأحمر'), ('New Valley', 'الوادي الجديد'), ('Matrouh', 'مطروح'),
+ ('North Sinai', 'شمال سيناء'), ('South Sinai', 'جنوب سيناء');
 
-INSERT INTO provinces (country_id, name)
-SELECT c.id, p.name FROM countries c,
-     (SELECT 'Cairo' AS name UNION ALL SELECT 'Giza' UNION ALL SELECT 'Alexandria' UNION ALL SELECT 'Qalyubia'
-      UNION ALL SELECT 'Dakahlia' UNION ALL SELECT 'Sharqia') AS p
-WHERE c.name = 'Egypt';
+INSERT INTO service_categories (code, name_en, name_ar, vehicle_required, active, sort_order, created_at, updated_at) VALUES
+ ('SPARE_PARTS', 'Spare parts', 'قطع غيار', TRUE, TRUE, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+ ('BATTERIES', 'Batteries', 'بطاريات', TRUE, TRUE, 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+ ('TIRES', 'Tires', 'إطارات', TRUE, TRUE, 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+ ('OIL_CHANGE', 'Oil change', 'تغيير زيت', TRUE, TRUE, 4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+ ('CAR_WASH', 'Car wash', 'غسيل سيارات', FALSE, TRUE, 5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+ ('ACCESSORIES', 'Accessories', 'إكسسوارات', FALSE, TRUE, 6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+ ('REPAIRS', 'Repairs and maintenance', 'إصلاح وصيانة', TRUE, TRUE, 7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
-INSERT INTO cities (province_id, name)
-SELECT p.id, x.city FROM provinces p
-JOIN (SELECT 'Cairo' AS province, 'Nasr City' AS city UNION ALL SELECT 'Cairo', 'Heliopolis'
-      UNION ALL SELECT 'Cairo', 'Maadi' UNION ALL SELECT 'Cairo', 'New Cairo'
-      UNION ALL SELECT 'Giza', 'Dokki' UNION ALL SELECT 'Giza', 'Mohandessin'
-      UNION ALL SELECT 'Giza', '6th of October' UNION ALL SELECT 'Giza', 'Sheikh Zayed'
-      UNION ALL SELECT 'Alexandria', 'Smouha' UNION ALL SELECT 'Alexandria', 'Sidi Gaber'
-      UNION ALL SELECT 'Qalyubia', 'Banha' UNION ALL SELECT 'Qalyubia', 'Shubra El Kheima'
-      UNION ALL SELECT 'Dakahlia', 'Mansoura' UNION ALL SELECT 'Sharqia', 'Zagazig') AS x
-  ON x.province = p.name;
-
-INSERT INTO services (name, description) VALUES
-    ('Oil change', 'Engine oil and filter replacement'),
-    ('Brake service', 'Brake pads, discs and fluid'),
-    ('Tire service', 'Tire change, balancing and alignment'),
-    ('Battery replacement', 'Battery test and replacement'),
-    ('AC service', 'Air conditioning check and recharge'),
-    ('Engine diagnostics', 'Computer diagnostics and inspection'),
-    ('Suspension repair', 'Shocks, struts and suspension parts'),
-    ('Electrical repair', 'Wiring, lights and electrical faults'),
-    ('Car wash', 'Exterior and interior cleaning'),
-    ('Body and paint', 'Dent repair and painting');
-
-INSERT INTO car_types (name) VALUES
-    ('Toyota'), ('Hyundai'), ('Kia'), ('Nissan'), ('Chevrolet'), ('Renault'), ('Peugeot'), ('Mitsubishi'),
-    ('Skoda'), ('Volkswagen'), ('BMW'), ('Mercedes-Benz'), ('MG'), ('Chery'), ('Fiat');
-
-INSERT INTO common_spare_parts (name) VALUES
-    ('Oil filter'), ('Air filter'), ('Cabin filter'), ('Brake pads'), ('Brake discs'), ('Spark plugs'),
-    ('Battery'), ('Wiper blades'), ('Timing belt'), ('Shock absorbers');
-
-INSERT INTO cancellation_reasons (text, applies_to) VALUES
-    ('I found another provider', 'CUSTOMER'),
-    ('I no longer need the service', 'CUSTOMER'),
-    ('The price is too high', 'CUSTOMER'),
-    ('The appointment time does not suit me', 'ANY'),
-    ('Parts are not available', 'PROVIDER'),
-    ('The workshop is fully booked', 'PROVIDER'),
-    ('Other', 'ANY');
+-- Initial configuration: every fee is zero, as agreed for V1.
+INSERT INTO config_versions (config_key, payload, effective_from, created_by, reason, created_at) VALUES
+ ('MARKETPLACE', '{"responseDeadlineHours":48,"offerValidityDefaultHours":24,"offerValidityMinHours":1,"offerValidityMaxHours":48,"maxProviderTargets":20,"defaultMatchRadiusKm":30,"noShowGraceMinutes":30,"rankingWindowDays":90,"providerCancellationFlagThreshold":3,"customerCancellationFlagThreshold":5,"disputeFlagThreshold":3}', CURRENT_TIMESTAMP, NULL, 'Initial V1 configuration', CURRENT_TIMESTAMP),
+ ('COMMISSION', '{"mode":"NONE","value":0,"payer":"PROVIDER"}', CURRENT_TIMESTAMP, NULL, 'Initial V1 configuration: commission off', CURRENT_TIMESTAMP),
+ ('SUBSCRIPTION', '{"monthlyPrice":0,"graceDays":7,"reminderDaysBefore":[7,3]}', CURRENT_TIMESTAMP, NULL, 'Initial V1 configuration: subscription free', CURRENT_TIMESTAMP),
+ ('SELLER', '{"maxActiveListings":3,"feeMode":"NONE","feeValue":0,"feeTiming":"ON_PUBLISH","listingDurationDays":30,"moderationRequired":true}', CURRENT_TIMESTAMP, NULL, 'Initial V1 configuration: seller fee off', CURRENT_TIMESTAMP);

@@ -1,88 +1,92 @@
 package com.doubleclick.wadii.identity;
 
-import com.doubleclick.wadii.catalog.City;
 import com.doubleclick.wadii.common.persistence.AuditedEntity;
-import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
-import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.Instant;
+import java.util.Arrays;
 import java.util.EnumSet;
-import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
-@Entity
-@Table(name = "users")
+/**
+ * One account per person. Customer and seller capabilities are always present; provider capability comes from a
+ * linked provider profile; staff accounts are flagged {@code admin} and can only be created by a super admin.
+ */
 @Getter
 @Setter
-@NoArgsConstructor
+@Entity
+@Table(name = "users")
 public class User extends AuditedEntity {
+
+    @Column(name = "full_name", nullable = false)
+    private String fullName;
 
     @Column(nullable = false)
     private String email;
 
+    @Column(nullable = false)
+    private String phone;
+
     @Column(name = "password_hash", nullable = false)
     private String passwordHash;
-
-    private String firstName;
-    private String lastName;
-    private String phone;
-    private String image;
-    private String backgroundImage;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "city_id")
-    private City city;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private Role role;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private AccountStatus status = AccountStatus.ACTIVE;
 
-    private String fcmToken;
+    @Column(name = "is_admin", nullable = false)
+    private boolean admin;
 
-    /** Incrementing it invalidates every JWT issued before. */
-    @Column(nullable = false)
+    @Column(name = "admin_roles")
+    private String adminRolesCsv;
+
+    /** Bumped to revoke every issued JWT at once (logout everywhere, password change, suspension). */
+    @Column(name = "token_version", nullable = false)
     private int tokenVersion;
 
-    private Instant lastLoginAt;
+    @Column(name = "fcm_token")
+    private String fcmToken;
 
-    @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "user_admin_roles", joinColumns = @JoinColumn(name = "user_id"))
-    @Column(name = "admin_role")
-    @Enumerated(EnumType.STRING)
-    private Set<AdminRole> adminRoles = new HashSet<>();
+    @Column(name = "status_reason")
+    private String statusReason;
 
-    public String displayName() {
-        String name = ((firstName == null ? "" : firstName) + " " + (lastName == null ? "" : lastName)).trim();
-        return name.isEmpty() ? "User #" + getId() : name;
-    }
+    @Version
+    private long version;
 
     public boolean isActive() {
         return status == AccountStatus.ACTIVE;
     }
 
-    /** Effective admin permissions: SUPER_ADMIN expands to all of them; non-admins have none. */
-    public Set<AdminRole> effectiveAdminRoles() {
-        if (role != Role.ADMIN) return EnumSet.noneOf(AdminRole.class);
-        if (adminRoles.contains(AdminRole.SUPER_ADMIN)) return EnumSet.allOf(AdminRole.class);
-        return adminRoles.isEmpty() ? EnumSet.noneOf(AdminRole.class) : EnumSet.copyOf(adminRoles);
-    }
-
     public void revokeTokens() {
         tokenVersion++;
+    }
+
+    public Set<AdminRole> getAdminRoles() {
+        if (adminRolesCsv == null || adminRolesCsv.isBlank()) {
+            return EnumSet.noneOf(AdminRole.class);
+        }
+        return Arrays.stream(adminRolesCsv.split(",")).map(AdminRole::valueOf)
+                .collect(Collectors.toCollection(() -> EnumSet.noneOf(AdminRole.class)));
+    }
+
+    public void setAdminRoles(Set<AdminRole> roles) {
+        adminRolesCsv = roles == null || roles.isEmpty() ? null
+                : roles.stream().map(Enum::name).sorted().collect(Collectors.joining(","));
+    }
+
+    /** SUPER_ADMIN expands to every admin role so permission checks stay one-dimensional. */
+    public Set<AdminRole> effectiveAdminRoles() {
+        if (!admin) {
+            return EnumSet.noneOf(AdminRole.class);
+        }
+        Set<AdminRole> roles = getAdminRoles();
+        return roles.contains(AdminRole.SUPER_ADMIN) ? EnumSet.allOf(AdminRole.class) : roles;
     }
 }

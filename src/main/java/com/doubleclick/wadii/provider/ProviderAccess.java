@@ -3,32 +3,45 @@ package com.doubleclick.wadii.provider;
 import com.doubleclick.wadii.common.error.BusinessException;
 import com.doubleclick.wadii.common.error.ErrorCode;
 import com.doubleclick.wadii.common.security.AuthUser;
+import com.doubleclick.wadii.subscription.SubscriptionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Optional;
-
-/** JWT -> provider profile. Provider ids sent by clients are never used to decide ownership. */
+/** Resolves the caller's provider profile for Provider Mode endpoints. The JWT identifies the user; nothing else. */
 @Component
 @RequiredArgsConstructor
 public class ProviderAccess {
 
-    private final ProviderRepository providerRepository;
+    private final ProviderRepository providers;
+    private final SubscriptionService subscriptions;
 
-    public Provider requireOwn(AuthUser me) {
-        if (me == null || !me.isProvider()) {
-            throw BusinessException.forbidden("This action requires a provider account");
+    /** The caller's provider profile in any state (application screens). */
+    @Transactional(readOnly = true)
+    public Provider own(AuthUser user) {
+        if (user.admin()) {
+            throw BusinessException.of(ErrorCode.PROVIDER_NOT_ACTIVE, "Staff accounts cannot use Provider Mode.");
         }
-        return providerRepository.findByUserId(me.id())
-                .orElseThrow(() -> BusinessException.forbidden("No provider profile for this account"));
+        return providers.findByUserId(user.id()).orElseThrow(() -> BusinessException.of(ErrorCode.PROVIDER_NOT_FOUND));
     }
 
-    public Optional<Provider> findOwn(AuthUser me) {
-        if (me == null || !me.isProvider()) return Optional.empty();
-        return providerRepository.findByUserId(me.id());
+    /** Provider Mode is open: verified and active. Used for managing the profile and existing orders. */
+    @Transactional(readOnly = true)
+    public Provider operating(AuthUser user) {
+        Provider p = own(user);
+        if (!p.canOperate()) {
+            throw BusinessException.of(ErrorCode.PROVIDER_NOT_ACTIVE);
+        }
+        return p;
     }
 
-    public Provider require(Long providerId) {
-        return providerRepository.findById(providerId).orElseThrow(() -> BusinessException.notFound(ErrorCode.PROVIDER_NOT_FOUND));
+    /** Operating and not restricted by an unpaid subscription. Required for new activity such as sending offers. */
+    @Transactional(readOnly = true)
+    public Provider forNewActivity(AuthUser user) {
+        Provider p = operating(user);
+        if (subscriptions.isRestricted(p.getId())) {
+            throw BusinessException.of(ErrorCode.SUBSCRIPTION_RESTRICTED);
+        }
+        return p;
     }
 }

@@ -3,138 +3,176 @@ package com.doubleclick.wadii.order;
 import com.doubleclick.wadii.common.api.ApiResponse;
 import com.doubleclick.wadii.common.api.PageResponse;
 import com.doubleclick.wadii.common.security.AuthUser;
-import com.doubleclick.wadii.common.security.Permissions;
-import com.doubleclick.wadii.order.dto.OrderDtos.*;
-import com.doubleclick.wadii.policy.PolicyService;
+import com.doubleclick.wadii.dispute.DisputeRecorder;
+import com.doubleclick.wadii.order.OrderQueryService.ChargeView;
+import com.doubleclick.wadii.order.OrderQueryService.EventView;
+import com.doubleclick.wadii.order.OrderQueryService.OrderDetail;
+import com.doubleclick.wadii.order.OrderQueryService.OrderSummary;
+import com.doubleclick.wadii.order.OrderQueryService.RatingView;
+import com.doubleclick.wadii.order.OrderService.CashInput;
+import com.doubleclick.wadii.order.OrderService.ChargeInput;
+import com.doubleclick.wadii.order.OrderService.ComplaintInput;
+import com.doubleclick.wadii.order.OrderService.DescriptionInput;
+import com.doubleclick.wadii.order.OrderService.NoteInput;
+import com.doubleclick.wadii.order.OrderService.RatingInput;
+import com.doubleclick.wadii.order.OrderService.ReasonInput;
+import com.doubleclick.wadii.order.OrderService.RescheduleInput;
+import com.doubleclick.wadii.order.OrderService.StatementInput;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.Resource;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
-import java.util.Set;
 
+/** Service Orders for both parties. Every action returns the refreshed order (or the dispute/charge it created). */
 @RestController
-@RequestMapping("/api/v1")
+@RequestMapping("/api/v1/orders")
 @RequiredArgsConstructor
 public class OrderController {
 
-    private final OrderService orderService;
+    private final OrderService service;
+    private final OrderQueryService query;
+    private final DisputeRecorder disputes;
 
-    @PostMapping("/orders")
-    @PreAuthorize(Permissions.CUSTOMER)
-    public ResponseEntity<ApiResponse<OrderView>> create(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody CreateOrderRequest request) {
-        return ApiResponse.created(orderService.create(me, request), "Order created");
+    @GetMapping
+    public ResponseEntity<ApiResponse<PageResponse<OrderSummary>>> list(@AuthenticationPrincipal AuthUser me,
+                                                                       @RequestParam(defaultValue = "customer") String as,
+                                                                       @RequestParam(required = false) ServiceOrder.Status status,
+                                                                       @RequestParam(required = false) Integer page,
+                                                                       @RequestParam(required = false) Integer size) {
+        return ApiResponse.ok(query.list(me, "provider".equalsIgnoreCase(as), status, page, size));
     }
 
-    @GetMapping("/orders/mine")
-    public ResponseEntity<ApiResponse<PageResponse<OrderView>>> mine(@AuthenticationPrincipal AuthUser me,
-                                                                     @RequestParam(required = false) Set<OrderStatus> status,
-                                                                     @RequestParam(required = false) Integer page,
-                                                                     @RequestParam(required = false) Integer size) {
-        return ApiResponse.ok(orderService.mine(me, status, page, size));
+    @GetMapping("/{id}")
+    public ResponseEntity<ApiResponse<OrderDetail>> detail(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        return ApiResponse.ok(query.detail(me, id));
     }
 
-    @GetMapping("/providers/me/orders")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<PageResponse<OrderView>>> forProvider(@AuthenticationPrincipal AuthUser me,
-                                                                            @RequestParam(defaultValue = "ALL") String scope,
-                                                                            @RequestParam(required = false) Integer page,
-                                                                            @RequestParam(required = false) Integer size) {
-        return ApiResponse.ok(orderService.forProvider(me, scope, page, size));
+    @GetMapping("/{id}/events")
+    public ResponseEntity<ApiResponse<List<EventView>>> events(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        return ApiResponse.ok(query.events(me, id));
     }
 
-    @GetMapping("/orders/{id}")
-    public ResponseEntity<ApiResponse<OrderView>> get(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
-        return ApiResponse.ok(orderService.get(me, id));
+    @PostMapping("/{id}/start")
+    public ResponseEntity<ApiResponse<OrderDetail>> start(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        service.start(me, id);
+        return detail(me, id);
     }
 
-    @PatchMapping("/orders/{id}")
-    public ResponseEntity<ApiResponse<OrderView>> update(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
-                                                         @Valid @RequestBody UpdateOrderRequest request) {
-        return ApiResponse.ok(orderService.update(me, id, request), "Order updated");
+    @PostMapping("/{id}/mark-completed")
+    public ResponseEntity<ApiResponse<OrderDetail>> markCompleted(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                                                  @Valid @RequestBody(required = false) NoteInput body) {
+        service.markCompleted(me, id, body == null ? null : body.note());
+        return detail(me, id);
     }
 
-    @PostMapping("/orders/{id}/cancel")
-    public ResponseEntity<ApiResponse<CancelResult>> cancel(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
-                                                            @Valid @RequestBody(required = false) CancelRequest request) {
-        return ApiResponse.ok(orderService.cancel(me, id, request), "Order canceled");
+    @PostMapping("/{id}/confirm-completion")
+    public ResponseEntity<ApiResponse<OrderDetail>> confirm(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        service.confirmCompletion(me, id);
+        return detail(me, id);
     }
 
-    @GetMapping("/orders/{id}/cancellation")
-    public ResponseEntity<ApiResponse<CancellationView>> cancellation(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
-        return ApiResponse.ok(orderService.cancellation(me, id));
+    @PostMapping("/{id}/complain")
+    public ResponseEntity<ApiResponse<DisputeRecorder.View>> complain(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                                                      @Valid @RequestBody ComplaintInput body) {
+        return ApiResponse.created(disputes.view(service.complain(me, id, body)), "Complaint opened");
     }
 
-    @PostMapping("/orders/{id}/decline-invitation")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<Void>> declineInvitation(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
-        orderService.declineInvitation(me, id);
-        return ApiResponse.ok(null, "Invitation declined");
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<ApiResponse<OrderDetail>> cancel(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                                           @Valid @RequestBody ReasonInput body) {
+        service.cancel(me, id, body.reason());
+        return detail(me, id);
     }
 
-    @PostMapping("/orders/{id}/start")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<OrderView>> start(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
-        return ApiResponse.ok(orderService.start(me, id), "Service started");
+    @PostMapping("/{id}/reschedule")
+    public ResponseEntity<ApiResponse<OrderDetail>> reschedule(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                                               @Valid @RequestBody RescheduleInput body) {
+        service.reschedule(me, id, body);
+        return detail(me, id);
     }
 
-    @PostMapping("/orders/{id}/mark-done")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<OrderView>> markDone(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
-        return ApiResponse.ok(orderService.markDone(me, id), "Marked as done; waiting for customer confirmation");
+    @PostMapping("/{id}/report-no-show")
+    public ResponseEntity<ApiResponse<OrderDetail>> noShow(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        service.reportNoShow(me, id);
+        return detail(me, id);
     }
 
-    @PostMapping("/orders/{id}/confirm-completion")
-    public ResponseEntity<ApiResponse<OrderView>> confirm(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
-        return ApiResponse.ok(orderService.confirmCompletion(me, id), "Order completed");
+    @PostMapping("/{id}/request-interruption")
+    public ResponseEntity<ApiResponse<OrderDetail>> interruption(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                                                 @Valid @RequestBody ReasonInput body) {
+        service.requestInterruption(me, id, body.reason());
+        return detail(me, id);
     }
 
-    @GetMapping("/orders/{id}/timeline")
-    public ResponseEntity<ApiResponse<PageResponse<TimelineView>>> timeline(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
-                                                                           @RequestParam(required = false) Integer page,
-                                                                           @RequestParam(required = false) Integer size) {
-        return ApiResponse.ok(orderService.timeline(me, id, page, size));
+    @PostMapping("/{id}/interruption-statement")
+    public ResponseEntity<ApiResponse<OrderDetail>> statement(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                                              @Valid @RequestBody StatementInput body) {
+        service.interruptionStatement(me, id, body);
+        return detail(me, id);
     }
 
-    @GetMapping("/orders/{id}/policies")
-    public ResponseEntity<ApiResponse<List<PolicyService.SnapshotView>>> policies(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
-        return ApiResponse.ok(orderService.policies(me, id));
+    @PostMapping("/{id}/accept-interruption")
+    public ResponseEntity<ApiResponse<OrderDetail>> acceptInterruption(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        service.acceptInterruption(me, id);
+        return detail(me, id);
     }
 
-    @PostMapping(value = "/orders/{id}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ApiResponse<AttachmentView>> addAttachment(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
-                                                                     @RequestParam("file") MultipartFile file) {
-        return ApiResponse.created(orderService.addAttachment(me, id, file), "Attachment uploaded");
+    @PostMapping("/{id}/dispute-interruption")
+    public ResponseEntity<ApiResponse<DisputeRecorder.View>> disputeInterruption(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                                                                 @Valid @RequestBody ComplaintInput body) {
+        return ApiResponse.created(disputes.view(service.disputeInterruption(me, id, body)), "Dispute opened");
     }
 
-    @GetMapping("/orders/{id}/attachments")
-    public ResponseEntity<ApiResponse<List<AttachmentView>>> attachments(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
-        return ApiResponse.ok(orderService.attachments(me, id));
+    @PostMapping("/{id}/cash/report")
+    public ResponseEntity<ApiResponse<OrderDetail>> reportCash(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                                               @Valid @RequestBody CashInput body) {
+        service.reportCash(me, id, body.amount());
+        return detail(me, id);
     }
 
-    @GetMapping("/orders/{id}/attachments/{attachmentId}/file")
-    public ResponseEntity<Resource> attachmentFile(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @PathVariable Long attachmentId) {
-        return orderService.attachmentFile(me, id, attachmentId);
+    @PostMapping("/{id}/cash/confirm")
+    public ResponseEntity<ApiResponse<OrderDetail>> confirmCash(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        service.confirmCash(me, id);
+        return detail(me, id);
     }
 
-    @GetMapping("/admin/orders")
-    @PreAuthorize(Permissions.SUPPORT_ADMIN)
-    public ResponseEntity<ApiResponse<PageResponse<OrderView>>> adminList(@RequestParam(required = false) Set<OrderStatus> status,
-                                                                          @RequestParam(required = false) Integer page,
-                                                                          @RequestParam(required = false) Integer size) {
-        return ApiResponse.ok(orderService.adminList(status, page, size));
+    @PostMapping("/{id}/cash/dispute")
+    public ResponseEntity<ApiResponse<DisputeRecorder.View>> disputeCash(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                                                         @Valid @RequestBody DescriptionInput body) {
+        return ApiResponse.created(disputes.view(service.disputeCash(me, id, body.description())), "Dispute opened");
+    }
+
+    @PostMapping("/{id}/charges")
+    public ResponseEntity<ApiResponse<ChargeView>> proposeCharge(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                                                 @Valid @RequestBody ChargeInput body) {
+        return ApiResponse.created(ChargeView.of(service.proposeCharge(me, id, body)), "Charge proposed");
+    }
+
+    @PostMapping("/{id}/charges/{chargeId}/approve")
+    public ResponseEntity<ApiResponse<ChargeView>> approveCharge(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                                                 @PathVariable Long chargeId) {
+        return ApiResponse.ok(ChargeView.of(service.decideCharge(me, id, chargeId, true)));
+    }
+
+    @PostMapping("/{id}/charges/{chargeId}/reject")
+    public ResponseEntity<ApiResponse<ChargeView>> rejectCharge(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                                                @PathVariable Long chargeId) {
+        return ApiResponse.ok(ChargeView.of(service.decideCharge(me, id, chargeId, false)));
+    }
+
+    @PostMapping("/{id}/rating")
+    public ResponseEntity<ApiResponse<RatingView>> rate(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                                        @Valid @RequestBody RatingInput body) {
+        Rating r = service.rate(me, id, body);
+        return ApiResponse.created(OrderQueryService.ratingView(r, me.fullName()), "Thank you for your rating");
     }
 }

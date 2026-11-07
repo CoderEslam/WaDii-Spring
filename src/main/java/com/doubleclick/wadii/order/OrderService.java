@@ -1,430 +1,625 @@
 package com.doubleclick.wadii.order;
 
-import com.doubleclick.wadii.appointment.AppointmentRepository;
-import com.doubleclick.wadii.appointment.AppointmentService;
-import com.doubleclick.wadii.audit.AuditAction;
-import com.doubleclick.wadii.audit.AuditService;
-import com.doubleclick.wadii.catalog.CarTypeRepository;
-import com.doubleclick.wadii.catalog.CatalogService;
-import com.doubleclick.wadii.catalog.CatalogServiceRepository;
-import com.doubleclick.wadii.common.api.PageResponse;
-import com.doubleclick.wadii.common.config.WadiiProperties;
 import com.doubleclick.wadii.common.error.BusinessException;
 import com.doubleclick.wadii.common.error.ErrorCode;
 import com.doubleclick.wadii.common.security.AuthUser;
-import com.doubleclick.wadii.identity.User;
-import com.doubleclick.wadii.identity.UserRepository;
+import com.doubleclick.wadii.common.util.KeyList;
+import com.doubleclick.wadii.common.util.Money;
+import com.doubleclick.wadii.common.util.Times;
+import com.doubleclick.wadii.dispute.Dispute;
+import com.doubleclick.wadii.dispute.DisputeRecorder;
+import com.doubleclick.wadii.files.FileAccessRule;
+import com.doubleclick.wadii.files.FilePurpose;
+import com.doubleclick.wadii.files.FileService;
+import com.doubleclick.wadii.fraud.FraudService;
+import com.doubleclick.wadii.ledger.LedgerEntry;
+import com.doubleclick.wadii.ledger.LedgerService;
 import com.doubleclick.wadii.notification.NotificationService;
 import com.doubleclick.wadii.notification.NotificationType;
-import com.doubleclick.wadii.order.OrderCancellationService.RefundRule;
-import com.doubleclick.wadii.order.dto.OrderDtos.*;
-import com.doubleclick.wadii.order.matching.MatchingService;
-import com.doubleclick.wadii.payment.InvoiceService;
-import com.doubleclick.wadii.payment.PaymentLedger;
-import com.doubleclick.wadii.payment.RefundSource;
-import com.doubleclick.wadii.policy.PolicyService;
-import com.doubleclick.wadii.policy.PolicyType;
-import com.doubleclick.wadii.provider.Provider;
-import com.doubleclick.wadii.provider.ProviderAccess;
-import com.doubleclick.wadii.response.OrderResponseRepository;
-import com.doubleclick.wadii.storage.FileCategory;
-import com.doubleclick.wadii.storage.FileStorageService;
-import com.doubleclick.wadii.storage.StoredFile;
+import com.doubleclick.wadii.offer.OfferLineRepository;
+import com.doubleclick.wadii.offer.OfferPricing;
+import com.doubleclick.wadii.request.RequestStatusService;
+import com.doubleclick.wadii.request.ServiceItem;
+import com.doubleclick.wadii.request.ServiceItemRepository;
+import com.doubleclick.wadii.settings.Configs;
+import com.doubleclick.wadii.settings.PlatformConfigService;
 import com.doubleclick.wadii.warranty.WarrantyService;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.Resource;
-import org.springframework.data.domain.Sort;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.EnumSet;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * Service Order lifecycle after acceptance. Execution: ACCEPTED -> IN_PROGRESS -> PROVIDER_MARKED_COMPLETED ->
+ * COMPLETED, only ever completed by the customer (or by staff deciding a dispute). Cash collection is a separate
+ * record: the provider reports, the customer confirms or disputes, and nothing is inferred from execution.
+ */
 @Service
 @RequiredArgsConstructor
-public class OrderService {
+public class OrderService implements FileAccessRule {
 
-    private static final int MAX_ATTACHMENTS = 10;
+    public static final String FILE_REF = "ORDER";
 
-    private final OrderRepository orderRepository;
-    private final OrderProviderTargetRepository targetRepository;
-    private final OrderAttachmentRepository attachmentRepository;
-    private final OrderTimelineRepository timelineRepository;
-    private final OrderCancellationRepository cancellationRepository;
-    private final OrderResponseRepository responseRepository;
-    private final CatalogServiceRepository catalogServiceRepository;
-    private final CarTypeRepository carTypeRepository;
-    private final UserRepository userRepository;
-    private final AppointmentRepository appointmentRepository;
-    private final MatchingService matchingService;
-    private final OrderAccess orderAccess;
-    private final ProviderAccess providerAccess;
-    private final OrderCancellationService cancellationService;
-    private final AppointmentService appointmentService;
-    private final PaymentLedger ledger;
-    private final InvoiceService invoiceService;
-    private final WarrantyService warrantyService;
-    private final PolicyService policyService;
-    private final FileStorageService storage;
+    /** Order states in which the provider may record cash received. */
+    static final Set<ServiceOrder.Status> CASH_REPORTABLE = EnumSet.of(ServiceOrder.Status.IN_PROGRESS,
+            ServiceOrder.Status.PROVIDER_MARKED_COMPLETED, ServiceOrder.Status.COMPLETED, ServiceOrder.Status.INTERRUPTED);
+    static final Set<ServiceOrder.CashStatus> CASH_OPEN = EnumSet.of(ServiceOrder.CashStatus.NOT_DUE,
+            ServiceOrder.CashStatus.DUE, ServiceOrder.CashStatus.PARTIAL);
+
+    private final ServiceOrderRepository orders;
+    private final OrderChargeRepository charges;
+    private final RatingRepository ratings;
+    private final OfferLineRepository lines;
+    private final ServiceItemRepository items;
+    private final RequestStatusService requestStatus;
+    private final AppointmentPolicy appointments;
+    private final OrderTimeline timeline;
+    private final WarrantyService warranties;
+    private final DisputeRecorder disputes;
+    private final LedgerService ledger;
+    private final FraudService fraud;
+    private final FileService files;
     private final NotificationService notifications;
-    private final AuditService audit;
-    private final OrderTimelineService timeline;
-    private final WadiiProperties properties;
+    private final PlatformConfigService config;
     private final Clock clock;
 
-    // ------------------------------------------------------------------ create
+    public enum Party { CUSTOMER, PROVIDER }
+
+    public record NoteInput(@Size(max = 1000) String note) {
+    }
+
+    public record ReasonInput(@NotBlank @Size(max = 500) String reason) {
+    }
+
+    public record RescheduleInput(@NotNull Instant appointmentStart, @Size(max = 500) String reason) {
+    }
+
+    public record ComplaintInput(@NotBlank @Size(max = 4000) String description, @Size(max = 10) List<String> evidenceKeys) {
+    }
+
+    public record StatementInput(@NotBlank @Size(max = 4000) String workDone,
+                                 @NotNull @DecimalMin("0") @Digits(integer = 10, fraction = 2) BigDecimal laborCost,
+                                 @NotNull @DecimalMin("0") @Digits(integer = 10, fraction = 2) BigDecimal partsCost,
+                                 @NotNull @DecimalMin("0") @Digits(integer = 10, fraction = 2) BigDecimal proposedAmount,
+                                 @Size(max = 10) List<String> evidenceKeys) {
+    }
+
+    public record CashInput(@NotNull @DecimalMin("0.01") @Digits(integer = 10, fraction = 2) BigDecimal amount) {
+    }
+
+    public record DescriptionInput(@NotBlank @Size(max = 4000) String description) {
+    }
+
+    public record ChargeInput(@NotBlank @Size(max = 500) String description,
+                              @NotNull @DecimalMin("0.01") @Digits(integer = 10, fraction = 2) BigDecimal amount) {
+    }
+
+    public record RatingInput(@Min(1) @Max(5) int stars, @Size(max = 2000) String comment) {
+    }
+
+    // ------------------------------------------------------------------ execution
 
     @Transactional
-    public OrderView create(AuthUser me, CreateOrderRequest r) {
-        if (me.isAdmin()) throw BusinessException.forbidden("Admin accounts cannot create orders");
-        LocalDate today = LocalDate.now(clock.withZone(properties.zone()));
-        if (r.requestedDate().isBefore(today)) {
-            throw BusinessException.of(ErrorCode.VALIDATION_FAILED, "requestedDate cannot be in the past");
-        }
-        if ((r.latitude() == null) != (r.longitude() == null)) {
-            throw BusinessException.validation("latitude and longitude must be sent together");
-        }
-        Set<Long> serviceIds = new HashSet<>(r.serviceIds());
-        List<CatalogService> services = catalogServiceRepository.findAllById(serviceIds);
-        if (services.size() != serviceIds.size() || services.stream().anyMatch(s -> !s.isActive())) {
-            throw BusinessException.validation("One or more service ids do not exist or are inactive");
-        }
-        User customer = userRepository.findById(me.id()).orElseThrow();
-        Provider explicit = r.providerId() == null ? null : matchingService.validateExplicit(r.providerId(), me.id(), serviceIds);
-
-        Order o = new Order();
-        o.setCustomer(customer);
-        o.setCarType(r.carTypeId() == null ? null
-                : carTypeRepository.findById(r.carTypeId()).orElseThrow(() -> BusinessException.validation("carTypeId does not exist")));
-        o.setCarDescription(r.carDescription().trim());
-        o.setRequestedDate(r.requestedDate());
-        o.setAddress(r.address());
-        o.setLatitude(r.latitude());
-        o.setLongitude(r.longitude());
-        o.setComment(r.comment());
-        o.setSelectedProvider(explicit);
-        o.setCurrency(properties.getCurrency());
-        o.setResponseDeadline(clock.instant().plus(Duration.ofHours(properties.getOrder().getResponseWindowHours())));
-        o.getServices().addAll(services);
-        if (r.spareParts() != null) {
-            for (String name : r.spareParts()) {
-                OrderSparePart part = new OrderSparePart();
-                part.setOrder(o);
-                part.setName(name.trim());
-                o.getSpareParts().add(part);
-            }
-        }
-        o = orderRepository.save(o);
-        timeline.add(o.getId(), TimelineEvent.ORDER_CREATED, me.id(), ActorRole.CUSTOMER,
-                explicit == null ? "automatic matching" : "selected provider " + explicit.getId());
-        audit.record(me, ActorRole.CUSTOMER, AuditAction.ORDER_CREATED, "ORDER", o.getId(), null);
-
-        Instant now = clock.instant();
-        if (explicit != null) {
-            matchingService.target(o, List.of(matchingService.explicitCandidate(o, explicit)));
-            OrderStateMachine.transition(o, OrderStatus.QUOTING, now);
-        } else {
-            OrderStateMachine.transition(o, OrderStatus.MATCHING, now);
-            int targeted = matchingService.target(o, matchingService.candidates(o));
-            if (targeted > 0) {
-                OrderStateMachine.transition(o, OrderStatus.QUOTING, now);
-            } else {
-                timeline.system(o.getId(), TimelineEvent.NO_PROVIDER_MATCHED, "will retry until the response deadline");
-            }
-        }
-        notifications.notify(me.id(), NotificationType.ORDER_CREATED, "Order created",
-                o.getStatus() == OrderStatus.QUOTING ? "Order #" + o.getId() + " was sent to providers."
-                        : "Order #" + o.getId() + " was created. We are still looking for matching providers.", o.getId());
-        return toView(me, o, OrderAccess.Relation.CUSTOMER, null);
-    }
-
-    /** Job: retries matching for orders that found no provider yet. */
-    @Transactional
-    public void rematch(Long orderId) {
-        Order o = orderAccess.loadForUpdate(orderId);
-        if (o.getStatus() != OrderStatus.MATCHING || !clock.instant().isBefore(o.getResponseDeadline())) return;
-        if (matchingService.target(o, matchingService.candidates(o)) > 0) {
-            OrderStateMachine.transition(o, OrderStatus.QUOTING, clock.instant());
-        }
-    }
-
-    // ------------------------------------------------------------------ read
-
-    @Transactional
-    public OrderView get(AuthUser me, Long orderId) {
-        Order o = orderAccess.load(orderId);
-        OrderAccess.Access access = orderAccess.view(me, o);
-        if (access.relation() == OrderAccess.Relation.TARGETED_PROVIDER && access.target().getStatus() == TargetStatus.TARGETED) {
-            access.target().setStatus(TargetStatus.VIEWED);
-            access.target().setViewedAt(clock.instant());
-        }
-        return toView(me, o, access.relation(), access.target());
-    }
-
-    @Transactional(readOnly = true)
-    public PageResponse<OrderView> mine(AuthUser me, Set<OrderStatus> statuses, Integer page, Integer size) {
-        var pageable = PageResponse.pageable(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        var result = statuses == null || statuses.isEmpty()
-                ? orderRepository.findByCustomerId(me.id(), pageable)
-                : orderRepository.findByCustomerIdAndStatusIn(me.id(), statuses, pageable);
-        return PageResponse.of(result, o -> toView(me, o, OrderAccess.Relation.CUSTOMER, null));
-    }
-
-    /** Orders the provider was invited to. scope: OPEN (can still quote), ASSIGNED (won, in progress), CLOSED, ALL. */
-    @Transactional(readOnly = true)
-    public PageResponse<OrderView> forProvider(AuthUser me, String scope, Integer page, Integer size) {
-        Provider p = providerAccess.requireOwn(me);
-        Set<OrderStatus> statuses = switch (scope == null ? "ALL" : scope.toUpperCase()) {
-            case "OPEN" -> EnumSet.of(OrderStatus.QUOTING, OrderStatus.RESPONSES_AVAILABLE);
-            case "ASSIGNED" -> EnumSet.of(OrderStatus.ACCEPTED, OrderStatus.IN_PROGRESS);
-            case "CLOSED" -> EnumSet.of(OrderStatus.COMPLETED, OrderStatus.CANCELED, OrderStatus.EXPIRED);
-            default -> EnumSet.allOf(OrderStatus.class);
-        };
-        var result = targetRepository.findForProvider(p.getId(), statuses, PageResponse.pageable(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
-        return PageResponse.of(result, t -> {
-            Order o = t.getOrder();
-            OrderAccess.Relation rel = o.isAcceptedProvider(p.getId()) ? OrderAccess.Relation.ACCEPTED_PROVIDER : OrderAccess.Relation.TARGETED_PROVIDER;
-            return toView(me, o, rel, t);
-        });
-    }
-
-    @Transactional(readOnly = true)
-    public PageResponse<OrderView> adminList(Set<OrderStatus> statuses, Integer page, Integer size) {
-        var pageable = PageResponse.pageable(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        var result = orderRepository.findByStatusIn(statuses == null || statuses.isEmpty() ? EnumSet.allOf(OrderStatus.class) : statuses, pageable);
-        return PageResponse.of(result, o -> toView(null, o, OrderAccess.Relation.ADMIN, null));
-    }
-
-    @Transactional(readOnly = true)
-    public PageResponse<TimelineView> timeline(AuthUser me, Long orderId, Integer page, Integer size) {
-        Order o = orderAccess.load(orderId);
-        OrderAccess.Relation rel = orderAccess.view(me, o).relation();
-        if (rel == OrderAccess.Relation.TARGETED_PROVIDER) throw BusinessException.forbidden("Only the parties of the order can read its timeline");
-        return PageResponse.of(timelineRepository.findByOrderId(orderId, PageResponse.pageable(page, size, Sort.by("createdAt", "id"))), TimelineView::of);
-    }
-
-    @Transactional(readOnly = true)
-    public CancellationView cancellation(AuthUser me, Long orderId) {
-        Order o = orderAccess.load(orderId);
-        orderAccess.view(me, o);
-        return cancellationRepository.findByOrderId(orderId).map(CancellationView::of)
-                .orElseThrow(() -> BusinessException.notFound(ErrorCode.NOT_FOUND));
-    }
-
-    @Transactional(readOnly = true)
-    public List<PolicyService.SnapshotView> policies(AuthUser me, Long orderId) {
-        Order o = orderAccess.load(orderId);
-        orderAccess.view(me, o);
-        return policyService.snapshotsOf(orderId);
-    }
-
-    // ------------------------------------------------------------------ update (before any offer)
-
-    @Transactional
-    public OrderView update(AuthUser me, Long orderId, UpdateOrderRequest r) {
-        Order o = orderAccess.loadForUpdate(orderId);
-        orderAccess.requireCustomer(me, o);
-        if (!o.getStatus().awaitingOffers() || responseRepository.findByOrderId(orderId).size() > 0) {
-            throw BusinessException.of(ErrorCode.ORDER_INVALID_STATE, "An order can only be edited before any offer is received");
-        }
-        if (r.carDescription() != null) {
-            if (r.carDescription().isBlank()) throw BusinessException.validation("carDescription must not be blank");
-            o.setCarDescription(r.carDescription().trim());
-        }
-        if (r.requestedDate() != null) {
-            if (r.requestedDate().isBefore(LocalDate.now(clock.withZone(properties.zone())))) {
-                throw BusinessException.validation("requestedDate cannot be in the past");
-            }
-            o.setRequestedDate(r.requestedDate());
-        }
-        if (r.address() != null) o.setAddress(r.address());
-        if (r.comment() != null) o.setComment(r.comment());
-        return toView(me, o, OrderAccess.Relation.CUSTOMER, null);
-    }
-
-    // ------------------------------------------------------------------ cancel
-
-    /**
-     * Customer: any time before IN_PROGRESS (after acceptance the CANCELLATION policy snapshot decides the fee).
-     * Accepted provider: while ACCEPTED (full refund of anything paid).
-     * Support admin: any non-terminal order (full refund).
-     * IN_PROGRESS orders can only be canceled by support; the customer should open a dispute.
-     */
-    @Transactional
-    public CancelResult cancel(AuthUser me, Long orderId, CancelRequest request) {
-        Order o = orderAccess.loadForUpdate(orderId);
-        if (o.getStatus().isTerminal()) throw BusinessException.of(ErrorCode.ORDER_INVALID_STATE, "The order is already " + o.getStatus());
-        List<Long> refunds;
-        String reasonText = request == null ? null : request.reason();
-        Long reasonId = request == null ? null : request.reasonId();
-        if (o.isOwnedBy(me.id())) {
-            if (o.getStatus() == OrderStatus.IN_PROGRESS) {
-                throw BusinessException.of(ErrorCode.ORDER_INVALID_STATE, "The service already started; open a dispute instead");
-            }
-            refunds = cancellationService.cancel(o, me, ActorRole.CUSTOMER, reasonId, reasonText, customerRefundRule(o), RefundSource.CANCELLATION);
-        } else if (providerAccess.findOwn(me).map(p -> o.isAcceptedProvider(p.getId())).orElse(false)) {
-            if (o.getStatus() != OrderStatus.ACCEPTED) {
-                throw BusinessException.of(ErrorCode.ORDER_INVALID_STATE, "A provider can only cancel before starting the service");
-            }
-            if (reasonText == null && reasonId == null) throw BusinessException.validation("A reason is required");
-            refunds = cancellationService.cancel(o, me, ActorRole.PROVIDER, reasonId, reasonText, RefundRule.full(), RefundSource.CANCELLATION);
-        } else if (me.isSupport()) {
-            if (reasonText == null && reasonId == null) throw BusinessException.validation("A reason is required");
-            refunds = cancellationService.cancel(o, me, ActorRole.ADMIN, reasonId, reasonText, RefundRule.full(), RefundSource.ADMIN);
-        } else {
-            throw BusinessException.forbidden("You cannot cancel this order");
-        }
-        return new CancelResult(toView(me, o, OrderAccess.Relation.CUSTOMER, null), refunds);
-    }
-
-    /** Free before acceptance; afterwards the snapshot fee applies inside the free-cancellation window rule. */
-    private RefundRule customerRefundRule(Order o) {
-        if (o.getStatus() != OrderStatus.ACCEPTED) return RefundRule.full();
-        PolicyService.PolicyTerms terms = policyService.snapshotTerms(o.getId(), PolicyType.CANCELLATION);
-        BigDecimal fee = terms.feePercent() == null ? BigDecimal.ZERO : terms.feePercent();
-        if (fee.signum() == 0) return RefundRule.full();
-        var appointment = appointmentRepository.findByOrderId(o.getId()).filter(a -> a.getStatus().isOpen());
-        if (appointment.isEmpty()) return RefundRule.full();
-        int freeHours = terms.freeCancellationHours() == null ? 0 : terms.freeCancellationHours();
-        boolean late = clock.instant().isAfter(appointment.get().getScheduledStart().minus(Duration.ofHours(freeHours)));
-        return late ? RefundRule.minusFee(fee) : RefundRule.full();
-    }
-
-    /** A targeted provider declines to quote. */
-    @Transactional
-    public void declineInvitation(AuthUser me, Long orderId) {
-        Provider p = providerAccess.requireOwn(me);
-        OrderProviderTarget t = targetRepository.findByOrderIdAndProviderId(orderId, p.getId())
-                .orElseThrow(() -> BusinessException.of(ErrorCode.RESPONSE_NOT_TARGETED));
-        if (t.getStatus() != TargetStatus.TARGETED && t.getStatus() != TargetStatus.VIEWED) {
-            throw BusinessException.of(ErrorCode.CONFLICT, "This invitation is already " + t.getStatus());
-        }
-        t.setStatus(TargetStatus.DECLINED);
-    }
-
-    // ------------------------------------------------------------------ service execution
-
-    /** Accepted provider starts the job. V1 rule PAY_BEFORE_SERVICE: the order must be fully paid. */
-    @Transactional
-    public OrderView start(AuthUser me, Long orderId) {
-        Order o = orderAccess.loadForUpdate(orderId);
-        orderAccess.requireAcceptedProvider(me, o);
-        if (o.getStatus() != OrderStatus.ACCEPTED) throw BusinessException.of(ErrorCode.ORDER_INVALID_STATE);
-        if (!ledger.isFullyPaid(o)) throw BusinessException.of(ErrorCode.ORDER_NOT_FULLY_PAID);
-        OrderStateMachine.transition(o, OrderStatus.IN_PROGRESS, clock.instant());
-        timeline.add(orderId, TimelineEvent.SERVICE_STARTED, me.id(), ActorRole.PROVIDER, null);
-        audit.record(me, ActorRole.PROVIDER, AuditAction.ORDER_STARTED, "ORDER", orderId, null);
-        notifications.notify(o.getCustomer().getId(), NotificationType.ORDER_STARTED, "Service started",
-                "The provider started working on order #" + orderId + ".", orderId);
-        return toView(me, o, OrderAccess.Relation.ACCEPTED_PROVIDER, null);
+    public ServiceOrder start(AuthUser user, Long id) {
+        ServiceOrder o = locked(id);
+        requireParty(o, user, Party.PROVIDER);
+        requireStatus(o, ServiceOrder.Status.ACCEPTED);
+        o.setStatus(ServiceOrder.Status.IN_PROGRESS);
+        o.setStartedAt(now());
+        timeline.record(o, "STARTED", user.id(), OrderEvent.ActorRole.PROVIDER, null);
+        notifyCustomer(o, NotificationType.SERVICE_STARTED, "Service started", "The provider started working on your order.");
+        return o;
     }
 
     @Transactional
-    public OrderView markDone(AuthUser me, Long orderId) {
-        Order o = orderAccess.loadForUpdate(orderId);
-        orderAccess.requireAcceptedProvider(me, o);
-        if (o.getStatus() != OrderStatus.IN_PROGRESS || o.getProviderCompletedAt() != null) {
+    public ServiceOrder markCompleted(AuthUser user, Long id, String note) {
+        ServiceOrder o = locked(id);
+        requireParty(o, user, Party.PROVIDER);
+        requireStatus(o, ServiceOrder.Status.IN_PROGRESS);
+        o.setStatus(ServiceOrder.Status.PROVIDER_MARKED_COMPLETED);
+        o.setProviderCompletedAt(now());
+        if (o.getCashStatus() == ServiceOrder.CashStatus.NOT_DUE) {
+            o.setCashStatus(ServiceOrder.CashStatus.DUE);
+        }
+        timeline.record(o, "PROVIDER_MARKED_COMPLETED", user.id(), OrderEvent.ActorRole.PROVIDER, note);
+        notifyCustomer(o, NotificationType.CONFIRMATION_REQUIRED, "Please confirm completion",
+                "The provider marked the service as completed. Review it and confirm, or tell us what is wrong.");
+        return o;
+    }
+
+    @Transactional
+    public ServiceOrder confirmCompletion(AuthUser user, Long id) {
+        ServiceOrder o = locked(id);
+        requireParty(o, user, Party.CUSTOMER);
+        requireStatus(o, ServiceOrder.Status.PROVIDER_MARKED_COMPLETED);
+        complete(o, user.id(), OrderEvent.ActorRole.CUSTOMER, null);
+        return o;
+    }
+
+    @Transactional
+    public Dispute complain(AuthUser user, Long id, ComplaintInput input) {
+        ServiceOrder o = locked(id);
+        requireParty(o, user, Party.CUSTOMER);
+        requireStatus(o, ServiceOrder.Status.PROVIDER_MARKED_COMPLETED);
+        o.setStatus(ServiceOrder.Status.DISPUTED);
+        timeline.record(o, "COMPLAINT", user.id(), OrderEvent.ActorRole.CUSTOMER, input.description());
+        return disputes.open(user.id(), subject(o, Dispute.Type.SERVICE_QUALITY, Party.CUSTOMER), input.description(), input.evidenceKeys());
+    }
+
+    // ------------------------------------------------------------------ before work starts
+
+    @Transactional
+    public ServiceOrder cancel(AuthUser user, Long id, String reason) {
+        ServiceOrder o = locked(id);
+        Party party = party(o, user);
+        requireStatus(o, ServiceOrder.Status.ACCEPTED);
+        cancelInternal(o, party == Party.CUSTOMER ? ServiceOrder.CancellationKind.CUSTOMER_CANCELED
+                : ServiceOrder.CancellationKind.PROVIDER_CANCELED, reason, user.id(), role(party));
+        return o;
+    }
+
+    @Transactional
+    public ServiceOrder reschedule(AuthUser user, Long id, RescheduleInput input) {
+        ServiceOrder o = locked(id);
+        Party party = party(o, user);
+        requireStatus(o, ServiceOrder.Status.ACCEPTED);
+        Integer minutes = lines.findById(o.getLineId()).map(l -> l.getEstimatedMinutes()).orElse(null);
+        AppointmentPolicy.Slot slot = appointments.reserve(o.getBranchId(), input.appointmentStart(), minutes, o.getId());
+        Instant previous = o.getAppointmentStart();
+        o.setAppointmentStart(slot.start());
+        o.setAppointmentEnd(slot.end());
+        timeline.record(o, "RESCHEDULED", user.id(), role(party),
+                (previous == null ? "Set to " : "From " + previous + " to ") + slot.start()
+                        + (input.reason() == null ? "" : " - " + input.reason()));
+        notifyOther(o, party, NotificationType.APPOINTMENT_RESCHEDULED, "Appointment changed",
+                "The appointment for order #" + o.getId() + " is now " + slot.start() + ".");
+        return o;
+    }
+
+    /** After the grace period either party may report that the other did not show up; the order is canceled. */
+    @Transactional
+    public ServiceOrder reportNoShow(AuthUser user, Long id) {
+        ServiceOrder o = locked(id);
+        Party party = party(o, user);
+        requireStatus(o, ServiceOrder.Status.ACCEPTED);
+        if (!noShowReportable(o)) {
+            throw BusinessException.of(ErrorCode.NO_SHOW_TOO_EARLY);
+        }
+        ServiceOrder.CancellationKind kind = party == Party.CUSTOMER ? ServiceOrder.CancellationKind.PROVIDER_NO_SHOW
+                : ServiceOrder.CancellationKind.CUSTOMER_NO_SHOW;
+        cancelInternal(o, kind, "No-show reported", user.id(), role(party));
+        return o;
+    }
+
+    // ------------------------------------------------------------------ interruption / partial completion
+
+    @Transactional
+    public ServiceOrder requestInterruption(AuthUser user, Long id, String reason) {
+        ServiceOrder o = locked(id);
+        requireParty(o, user, Party.CUSTOMER);
+        requireStatus(o, ServiceOrder.Status.IN_PROGRESS);
+        o.setStatus(ServiceOrder.Status.INTERRUPTION_REQUESTED);
+        o.setInterruptionRequestedAt(now());
+        o.setInterruptionReason(reason);
+        timeline.record(o, "INTERRUPTION_REQUESTED", user.id(), OrderEvent.ActorRole.CUSTOMER, reason);
+        notifyProvider(o, NotificationType.INTERRUPTION_REQUESTED, "Customer asked to stop the work",
+                "Record the work already done and the amount you propose for it.");
+        return o;
+    }
+
+    @Transactional
+    public ServiceOrder interruptionStatement(AuthUser user, Long id, StatementInput input) {
+        ServiceOrder o = locked(id);
+        requireParty(o, user, Party.PROVIDER);
+        requireStatus(o, ServiceOrder.Status.INTERRUPTION_REQUESTED);
+        if (input.proposedAmount().compareTo(o.amountDue()) > 0) {
+            throw BusinessException.validation("The proposed amount cannot exceed the agreed amount of EGP " + o.amountDue() + ".");
+        }
+        files.attach(user.id(), input.evidenceKeys(), FilePurpose.EVIDENCE, FILE_REF, o.getId());
+        o.setInterruptionWorkDone(input.workDone().trim());
+        o.setInterruptionLabor(Money.of(input.laborCost()));
+        o.setInterruptionParts(Money.of(input.partsCost()));
+        o.setInterruptionProposed(Money.of(input.proposedAmount()));
+        o.setInterruptionEvidence(KeyList.join(input.evidenceKeys()));
+        o.setInterruptionStatementAt(now());
+        o.setStatus(ServiceOrder.Status.INTERRUPTION_STATEMENT_SUBMITTED);
+        timeline.record(o, "INTERRUPTION_STATEMENT", user.id(), OrderEvent.ActorRole.PROVIDER, "Proposed EGP " + o.getInterruptionProposed());
+        notifyCustomer(o, NotificationType.INTERRUPTION_STATEMENT, "Partial-completion statement",
+                "The provider proposes EGP " + o.getInterruptionProposed() + " for the work done. Accept it or dispute it.");
+        return o;
+    }
+
+    @Transactional
+    public ServiceOrder acceptInterruption(AuthUser user, Long id) {
+        ServiceOrder o = locked(id);
+        requireParty(o, user, Party.CUSTOMER);
+        requireStatus(o, ServiceOrder.Status.INTERRUPTION_STATEMENT_SUBMITTED);
+        o.setInterruptionOutcome(ServiceOrder.InterruptionOutcome.ACCEPTED);
+        finishInterrupted(o, o.getInterruptionProposed(), user.id(), OrderEvent.ActorRole.CUSTOMER);
+        notifyProvider(o, NotificationType.INTERRUPTION_ACCEPTED, "Statement accepted",
+                "The customer accepted EGP " + o.getFinalAmount() + " for the work done.");
+        return o;
+    }
+
+    @Transactional
+    public Dispute disputeInterruption(AuthUser user, Long id, ComplaintInput input) {
+        ServiceOrder o = locked(id);
+        requireParty(o, user, Party.CUSTOMER);
+        requireStatus(o, ServiceOrder.Status.INTERRUPTION_STATEMENT_SUBMITTED);
+        o.setInterruptionOutcome(ServiceOrder.InterruptionOutcome.DISPUTED);
+        o.setStatus(ServiceOrder.Status.DISPUTED);
+        timeline.record(o, "INTERRUPTION_DISPUTED", user.id(), OrderEvent.ActorRole.CUSTOMER, input.description());
+        return disputes.open(user.id(), subject(o, Dispute.Type.INTERRUPTION, Party.CUSTOMER), input.description(), input.evidenceKeys());
+    }
+
+    // ------------------------------------------------------------------ cash (self-reported, not verified by WaDii)
+
+    @Transactional
+    public ServiceOrder reportCash(AuthUser user, Long id, BigDecimal amount) {
+        ServiceOrder o = locked(id);
+        requireParty(o, user, Party.PROVIDER);
+        if (!CASH_REPORTABLE.contains(o.getStatus())) {
             throw BusinessException.of(ErrorCode.ORDER_INVALID_STATE);
         }
-        o.setProviderCompletedAt(clock.instant());
-        timeline.add(orderId, TimelineEvent.SERVICE_MARKED_DONE, me.id(), ActorRole.PROVIDER, null);
-        int hours = properties.getOrder().getAutoCompleteHours();
-        notifications.notify(o.getCustomer().getId(), NotificationType.SERVICE_MARKED_DONE, "Service done",
-                "The provider marked order #" + orderId + " as done. Please confirm"
-                        + (hours > 0 ? " (it completes automatically after " + hours + " hours)." : "."), orderId);
-        return toView(me, o, OrderAccess.Relation.ACCEPTED_PROVIDER, null);
-    }
-
-    @Transactional
-    public OrderView confirmCompletion(AuthUser me, Long orderId) {
-        Order o = orderAccess.loadForUpdate(orderId);
-        orderAccess.requireCustomer(me, o);
-        if (o.getStatus() != OrderStatus.IN_PROGRESS || o.getProviderCompletedAt() == null) {
-            throw BusinessException.of(ErrorCode.ORDER_INVALID_STATE, "The provider has not marked the service as done yet");
+        if (!CASH_OPEN.contains(o.getCashStatus())) {
+            throw BusinessException.of(ErrorCode.CASH_INVALID_STATE);
         }
-        complete(o, me, ActorRole.CUSTOMER);
-        return toView(me, o, OrderAccess.Relation.CUSTOMER, null);
+        BigDecimal reported = Money.of(amount);
+        o.setCashReportedAmount(reported);
+        o.setCashReportedAt(now());
+        o.setCashConfirmedAt(null);
+        o.setCashStatus(reported.compareTo(o.amountDue()) >= 0 ? ServiceOrder.CashStatus.REPORTED_COLLECTED : ServiceOrder.CashStatus.PARTIAL);
+        timeline.record(o, "CASH_REPORTED", user.id(), OrderEvent.ActorRole.PROVIDER, "EGP " + reported);
+        notifyCustomer(o, NotificationType.CASH_REPORTED, "Cash payment reported",
+                "The provider reports receiving EGP " + reported + " in cash. Confirm it or tell us if this is wrong.");
+        return o;
     }
-
-    /** Job: auto-confirms after the configured timeout, only when nothing is outstanding. */
-    @Transactional
-    public void autoComplete(Long orderId) {
-        Order o = orderAccess.loadForUpdate(orderId);
-        if (o.getStatus() != OrderStatus.IN_PROGRESS || o.getProviderCompletedAt() == null) return;
-        if (ledger.outstanding(o).signum() > 0) return;
-        complete(o, null, ActorRole.SYSTEM);
-    }
-
-    private void complete(Order o, AuthUser actor, ActorRole role) {
-        if (ledger.outstanding(o).signum() > 0) throw BusinessException.of(ErrorCode.ORDER_NOT_FULLY_PAID);
-        OrderStateMachine.transition(o, OrderStatus.COMPLETED, clock.instant());
-        appointmentService.completeFor(o.getId());
-        invoiceService.issue(o);
-        warrantyService.issueFor(o);
-        timeline.add(o.getId(), TimelineEvent.SERVICE_COMPLETED, actor == null ? null : actor.id(), role, null);
-        if (actor == null) audit.system(AuditAction.ORDER_COMPLETED, "ORDER", o.getId(), "auto-completed");
-        else audit.record(actor, role, AuditAction.ORDER_COMPLETED, "ORDER", o.getId(), null);
-        notifications.notify(o.getAcceptedProvider().getUser().getId(), NotificationType.ORDER_COMPLETED, "Order completed",
-                "Order #" + o.getId() + " is completed.", o.getId());
-        notifications.notify(o.getCustomer().getId(), NotificationType.ORDER_COMPLETED, "Order completed",
-                "Order #" + o.getId() + " is completed. You can now rate the provider.", o.getId());
-    }
-
-    // ------------------------------------------------------------------ attachments
 
     @Transactional
-    public AttachmentView addAttachment(AuthUser me, Long orderId, MultipartFile file) {
-        Order o = orderAccess.load(orderId);
-        orderAccess.requireCustomer(me, o);
-        if (o.getStatus().isTerminal()) throw BusinessException.of(ErrorCode.ORDER_INVALID_STATE);
-        if (attachmentRepository.countByOrderId(orderId) >= MAX_ATTACHMENTS) {
-            throw BusinessException.validation("At most " + MAX_ATTACHMENTS + " attachments per order");
+    public ServiceOrder confirmCash(AuthUser user, Long id) {
+        ServiceOrder o = locked(id);
+        requireParty(o, user, Party.CUSTOMER);
+        if (!cashAwaitingCustomer(o)) {
+            throw BusinessException.of(ErrorCode.CASH_INVALID_STATE);
         }
-        StoredFile stored = storage.store(file, FileCategory.ORDER_ATTACHMENT);
-        OrderAttachment a = new OrderAttachment();
-        a.setOrderId(orderId);
-        a.setUploadedBy(me.id());
-        a.setFileKey(stored.key());
-        a.setContentType(stored.contentType());
-        a.setSizeBytes(stored.size());
-        return AttachmentView.of(attachmentRepository.save(a));
+        o.setCashConfirmedAt(now());
+        if (o.getCashStatus() == ServiceOrder.CashStatus.REPORTED_COLLECTED) {
+            o.setCashStatus(ServiceOrder.CashStatus.CONFIRMED);
+        }
+        timeline.record(o, "CASH_CONFIRMED", user.id(), OrderEvent.ActorRole.CUSTOMER, "EGP " + o.getCashReportedAmount());
+        notifyProvider(o, NotificationType.CASH_CONFIRMED, "Cash confirmed", "The customer confirmed the cash payment.");
+        return o;
+    }
+
+    @Transactional
+    public Dispute disputeCash(AuthUser user, Long id, String description) {
+        ServiceOrder o = locked(id);
+        requireParty(o, user, Party.CUSTOMER);
+        if (!cashAwaitingCustomer(o)) {
+            throw BusinessException.of(ErrorCode.CASH_INVALID_STATE);
+        }
+        o.setCashStatus(ServiceOrder.CashStatus.DISPUTED);
+        timeline.record(o, "CASH_DISPUTED", user.id(), OrderEvent.ActorRole.CUSTOMER, description);
+        fraud.cashConflict(o);
+        notifyProvider(o, NotificationType.CASH_DISPUTED, "Cash report disputed", "The customer disputes the cash you reported.");
+        return disputes.open(user.id(), subject(o, Dispute.Type.CASH_COLLECTION, Party.CUSTOMER), description, List.of());
+    }
+
+    // ------------------------------------------------------------------ additional charges and rating
+
+    @Transactional
+    public OrderCharge proposeCharge(AuthUser user, Long id, ChargeInput input) {
+        ServiceOrder o = locked(id);
+        requireParty(o, user, Party.PROVIDER);
+        requireStatus(o, ServiceOrder.Status.IN_PROGRESS);
+        OrderCharge c = new OrderCharge();
+        c.setOrderId(o.getId());
+        c.setDescription(input.description().trim());
+        c.setAmount(Money.of(input.amount()));
+        charges.save(c);
+        timeline.record(o, "CHARGE_PROPOSED", user.id(), OrderEvent.ActorRole.PROVIDER, c.getDescription() + " EGP " + c.getAmount());
+        notifyCustomer(o, NotificationType.CHARGE_PROPOSED, "Additional work proposed",
+                "The provider asks for EGP " + c.getAmount() + " for: " + c.getDescription() + ". It applies only if you approve.");
+        return c;
+    }
+
+    @Transactional
+    public OrderCharge decideCharge(AuthUser user, Long id, Long chargeId, boolean approve) {
+        ServiceOrder o = locked(id);
+        requireParty(o, user, Party.CUSTOMER);
+        OrderCharge c = charges.findByIdAndOrderId(chargeId, id).orElseThrow(() -> BusinessException.of(ErrorCode.NOT_FOUND));
+        if (c.getStatus() != OrderCharge.Status.PENDING || o.isFinished()) {
+            throw BusinessException.of(ErrorCode.ORDER_INVALID_STATE);
+        }
+        c.setStatus(approve ? OrderCharge.Status.APPROVED : OrderCharge.Status.REJECTED);
+        c.setDecidedAt(now());
+        if (approve) {
+            o.setApprovedChargesTotal(o.getApprovedChargesTotal().add(c.getAmount()));
+        }
+        timeline.record(o, approve ? "CHARGE_APPROVED" : "CHARGE_REJECTED", user.id(), OrderEvent.ActorRole.CUSTOMER, c.getDescription());
+        notifyProvider(o, NotificationType.CHARGE_DECIDED, approve ? "Additional work approved" : "Additional work rejected",
+                c.getDescription() + " (EGP " + c.getAmount() + ")");
+        return c;
+    }
+
+    @Transactional
+    public Rating rate(AuthUser user, Long id, RatingInput input) {
+        ServiceOrder o = locked(id);
+        requireParty(o, user, Party.CUSTOMER);
+        if (o.getStatus() != ServiceOrder.Status.COMPLETED) {
+            throw BusinessException.of(ErrorCode.RATING_NOT_ALLOWED);
+        }
+        if (ratings.existsByOrderId(id)) {
+            throw BusinessException.of(ErrorCode.RATING_ALREADY_EXISTS);
+        }
+        Rating r = new Rating();
+        r.setOrderId(id);
+        r.setCustomerId(user.id());
+        r.setProviderId(o.getProviderId());
+        r.setStars(input.stars());
+        r.setComment(input.comment() == null || input.comment().isBlank() ? null : input.comment().trim());
+        ratings.save(r);
+        notifyProvider(o, NotificationType.RATING_RECEIVED, "New rating", "A customer rated your service " + input.stars() + "/5.");
+        return r;
+    }
+
+    // ------------------------------------------------------------------ staff decisions
+
+    @Transactional
+    public ServiceOrder adminCancel(AuthUser admin, Long id, String reason) {
+        ServiceOrder o = locked(id);
+        if (o.isFinished()) {
+            throw BusinessException.of(ErrorCode.ORDER_INVALID_STATE);
+        }
+        cancelInternal(o, ServiceOrder.CancellationKind.ADMIN_CANCELED, reason, admin.id(), OrderEvent.ActorRole.ADMIN);
+        return o;
+    }
+
+    /** Applies a dispute decision to the order. Called only by the dispute module after its permission checks. */
+    @Transactional
+    public void applyOutcome(Long orderId, Dispute.Outcome outcome, BigDecimal finalAmount, Long adminId, String note) {
+        ServiceOrder o = locked(orderId);
+        switch (outcome) {
+            case COMPLETE_ORDER -> {
+                requireStatus(o, ServiceOrder.Status.DISPUTED);
+                complete(o, adminId, OrderEvent.ActorRole.ADMIN, finalAmount);
+            }
+            case REOPEN_ORDER -> {
+                requireStatus(o, ServiceOrder.Status.DISPUTED);
+                o.setStatus(ServiceOrder.Status.IN_PROGRESS);
+                timeline.record(o, "REOPENED", adminId, OrderEvent.ActorRole.ADMIN, note);
+                notifyBoth(o, NotificationType.DISPUTE_RESOLVED, "Work reopened", "Support reopened the order so the work can be finished.");
+            }
+            case CANCEL_ORDER -> {
+                if (o.isFinished()) throw BusinessException.of(ErrorCode.ORDER_INVALID_STATE);
+                cancelInternal(o, ServiceOrder.CancellationKind.ADMIN_CANCELED, note, adminId, OrderEvent.ActorRole.ADMIN);
+            }
+            case SET_FINAL_AMOUNT -> {
+                if (finalAmount == null || finalAmount.signum() < 0) {
+                    throw BusinessException.validation("finalAmount is required for this outcome.");
+                }
+                requireStatus(o, ServiceOrder.Status.DISPUTED);
+                if (o.getInterruptionRequestedAt() != null) {
+                    o.setInterruptionOutcome(ServiceOrder.InterruptionOutcome.RESOLVED);
+                    finishInterrupted(o, finalAmount, adminId, OrderEvent.ActorRole.ADMIN);
+                } else {
+                    complete(o, adminId, OrderEvent.ActorRole.ADMIN, finalAmount);
+                }
+            }
+            case CASH_CONFIRMED -> {
+                requireCash(o, ServiceOrder.CashStatus.DISPUTED);
+                o.setCashStatus(ServiceOrder.CashStatus.CONFIRMED);
+                o.setCashConfirmedAt(now());
+                timeline.record(o, "CASH_CONFIRMED_BY_SUPPORT", adminId, OrderEvent.ActorRole.ADMIN, note);
+            }
+            case CASH_NOT_COLLECTED -> {
+                requireCash(o, ServiceOrder.CashStatus.DISPUTED);
+                o.setCashStatus(ServiceOrder.CashStatus.DUE);
+                o.setCashReportedAmount(null);
+                o.setCashReportedAt(null);
+                timeline.record(o, "CASH_REPORT_REJECTED_BY_SUPPORT", adminId, OrderEvent.ActorRole.ADMIN, note);
+            }
+            default -> timeline.record(o, "DISPUTE_CLOSED", adminId, OrderEvent.ActorRole.ADMIN, outcome + (note == null ? "" : ": " + note));
+        }
+    }
+
+    /** Puts an order back to its pre-dispute state when staff reject a dispute without changing anything. */
+    @Transactional
+    public void restoreAfterRejectedDispute(Long orderId, Dispute.Type type, Long adminId) {
+        ServiceOrder o = locked(orderId);
+        if (type == Dispute.Type.CASH_COLLECTION && o.getCashStatus() == ServiceOrder.CashStatus.DISPUTED) {
+            o.setCashStatus(o.getCashReportedAmount() != null && o.getCashReportedAmount().compareTo(o.amountDue()) >= 0
+                    ? ServiceOrder.CashStatus.CONFIRMED : ServiceOrder.CashStatus.PARTIAL);
+            o.setCashConfirmedAt(now());
+        } else if (type == Dispute.Type.SERVICE_QUALITY && o.getStatus() == ServiceOrder.Status.DISPUTED) {
+            complete(o, adminId, OrderEvent.ActorRole.ADMIN, null);
+        } else if (type == Dispute.Type.INTERRUPTION && o.getStatus() == ServiceOrder.Status.DISPUTED) {
+            o.setInterruptionOutcome(ServiceOrder.InterruptionOutcome.RESOLVED);
+            finishInterrupted(o, o.getInterruptionProposed(), adminId, OrderEvent.ActorRole.ADMIN);
+        }
+    }
+
+    // ------------------------------------------------------------------ queries used by views
+
+    boolean noShowReportable(ServiceOrder o) {
+        if (o.getAppointmentStart() == null) return false;
+        int grace = config.marketplace().noShowGraceMinutes();
+        return !now().isBefore(o.getAppointmentStart().plus(Duration.ofMinutes(grace)));
+    }
+
+    static boolean cashAwaitingCustomer(ServiceOrder o) {
+        return o.getCashStatus() == ServiceOrder.CashStatus.REPORTED_COLLECTED
+                || (o.getCashStatus() == ServiceOrder.CashStatus.PARTIAL && o.getCashConfirmedAt() == null && o.getCashReportedAt() != null);
     }
 
     @Transactional(readOnly = true)
-    public List<AttachmentView> attachments(AuthUser me, Long orderId) {
-        orderAccess.view(me, orderAccess.load(orderId));
-        return attachmentRepository.findByOrderIdOrderById(orderId).stream().map(AttachmentView::of).toList();
-    }
-
-    /** Customer, targeted / accepted providers and support only. */
-    @Transactional(readOnly = true)
-    public ResponseEntity<Resource> attachmentFile(AuthUser me, Long orderId, Long attachmentId) {
-        orderAccess.view(me, orderAccess.load(orderId));
-        OrderAttachment a = attachmentRepository.findById(attachmentId)
-                .filter(x -> x.getOrderId().equals(orderId))
-                .orElseThrow(() -> BusinessException.notFound(ErrorCode.NOT_FOUND));
-        return storage.servePrivate(a.getFileKey(), a.getContentType());
-    }
-
-    // ------------------------------------------------------------------ mapping
-
-    OrderView toView(AuthUser me, Order o, OrderAccess.Relation relation, OrderProviderTarget target) {
-        CounterpartView customer = null;
-        if (relation == OrderAccess.Relation.CUSTOMER || relation == OrderAccess.Relation.ADMIN || relation == OrderAccess.Relation.ACCEPTED_PROVIDER) {
-            // Targeted (not yet chosen) providers never see who the customer is.
-            User c = o.getCustomer();
-            customer = new CounterpartView(c.getId(), c.getFirstName(), c.getLastName(), c.getImage(), c.getPhone());
+    public ServiceOrder visible(AuthUser user, Long id) {
+        ServiceOrder o = orders.findById(id).orElseThrow(() -> BusinessException.of(ErrorCode.ORDER_NOT_FOUND));
+        if (!user.admin() && !o.getCustomerId().equals(user.id()) && !o.getProviderUserId().equals(user.id())) {
+            throw BusinessException.of(ErrorCode.ORDER_NOT_FOUND);
         }
-        return com.doubleclick.wadii.order.dto.OrderDtos.view(o, relation.name(), customer, target == null ? null : target.getStatus(),
-                target == null ? null : target.getDistanceKm());
+        return o;
+    }
+
+    @Override
+    public boolean supports(String refType) {
+        return FILE_REF.equals(refType);
+    }
+
+    @Override
+    public boolean canRead(AuthUser user, String refType, Long refId) {
+        return orders.findById(refId).map(o -> o.getCustomerId().equals(user.id()) || o.getProviderUserId().equals(user.id()))
+                .orElse(false);
+    }
+
+    // ------------------------------------------------------------------ internals
+
+    private void complete(ServiceOrder o, Long actorId, OrderEvent.ActorRole role, BigDecimal finalAmount) {
+        if (finalAmount != null) {
+            o.setFinalAmount(Money.of(finalAmount));
+        }
+        o.setStatus(ServiceOrder.Status.COMPLETED);
+        o.setCompletedAt(now());
+        o.setInvoiceNumber("WD-" + Times.local(o.getCompletedAt()).getYear() + "-" + String.format("%06d", o.getId()));
+        if (o.getCashStatus() == ServiceOrder.CashStatus.NOT_DUE) {
+            o.setCashStatus(ServiceOrder.CashStatus.DUE);
+        }
+        warranties.activate(o);
+        accrueCommission(o);
+        timeline.record(o, "COMPLETED", actorId, role, "Invoice " + o.getInvoiceNumber());
+        notifyBoth(o, NotificationType.ORDER_COMPLETED, "Order completed",
+                "Order #" + o.getId() + " is completed. Invoice " + o.getInvoiceNumber() + ".");
+    }
+
+    private void finishInterrupted(ServiceOrder o, BigDecimal amount, Long actorId, OrderEvent.ActorRole role) {
+        o.setFinalAmount(Money.of(amount));
+        o.setStatus(ServiceOrder.Status.INTERRUPTED);
+        o.setCompletedAt(now());
+        if (o.getCashStatus() == ServiceOrder.CashStatus.NOT_DUE && o.getFinalAmount().signum() > 0) {
+            o.setCashStatus(ServiceOrder.CashStatus.DUE);
+        }
+        accrueCommission(o);
+        timeline.record(o, "INTERRUPTED", actorId, role, "Final amount EGP " + o.getFinalAmount());
+    }
+
+    /**
+     * Records the commission WaDii is owed. The provider collects all cash, so the provider remits it whichever
+     * party bears it. With a final amount (partial completion or a dispute), the commission is recomputed on it.
+     */
+    private void accrueCommission(ServiceOrder o) {
+        BigDecimal base = o.getFinalAmount() != null ? o.getFinalAmount() : o.getCommissionBase();
+        BigDecimal amount = o.getFinalAmount() != null
+                ? OfferPricing.commission(o.getCommissionMode(), o.getCommissionValue(), base)
+                : o.getCommissionAmount();
+        String rule = switch (o.getCommissionMode()) {
+            case NONE -> "No commission";
+            case FIXED -> "Fixed commission of EGP " + o.getCommissionValue() + " per service order";
+            case PERCENT -> o.getCommissionValue() + "% of EGP " + base;
+        } + (o.getCommissionPayer() == Configs.CommissionPayer.CUSTOMER
+                ? " (customer-paid surcharge collected in cash by the provider)" : " (provider-paid)");
+        ledger.due(new LedgerService.Charge(LedgerEntry.Type.COMMISSION, amount, o.getProviderUserId(), o.getProviderId(),
+                o.getId(), o.getRequestId(), null, rule, o.getCommissionConfigId(), Times.today(clock).plusDays(30)));
+    }
+
+    private void cancelInternal(ServiceOrder o, ServiceOrder.CancellationKind kind, String reason, Long actorId,
+                                OrderEvent.ActorRole role) {
+        o.setStatus(ServiceOrder.Status.CANCELED);
+        o.setCanceledAt(now());
+        o.setCancellationKind(kind);
+        o.setCancellationReason(reason);
+        o.setCanceledBy(actorId);
+        ServiceItem item = items.findById(o.getServiceItemId()).orElseThrow();
+        item.setStatus(ServiceItem.Status.CANCELED);
+        requestStatus.refresh(o.getRequestId());
+        timeline.record(o, kind.name(), actorId, role, reason);
+        String body = switch (kind) {
+            case CUSTOMER_CANCELED -> "The customer canceled order #" + o.getId() + ".";
+            case PROVIDER_CANCELED -> "The provider canceled order #" + o.getId() + ".";
+            case CUSTOMER_NO_SHOW -> "Order #" + o.getId() + " was canceled: the provider reported that the customer did not show up.";
+            case PROVIDER_NO_SHOW -> "Order #" + o.getId() + " was canceled: the customer reported that the provider did not show up.";
+            case ADMIN_CANCELED -> "WaDii support canceled order #" + o.getId() + ".";
+        };
+        NotificationType type = kind == ServiceOrder.CancellationKind.CUSTOMER_NO_SHOW || kind == ServiceOrder.CancellationKind.PROVIDER_NO_SHOW
+                ? NotificationType.NO_SHOW_REPORTED : NotificationType.ORDER_CANCELED;
+        notifyBoth(o, type, "Order canceled", body);
+        if (ProviderStats.PROVIDER_FAULT.contains(kind)) {
+            fraud.afterProviderFault(o.getProviderId(), o.getProviderUserId());
+        } else if (kind != ServiceOrder.CancellationKind.ADMIN_CANCELED) {
+            fraud.afterCustomerCancellation(o.getCustomerId());
+        }
+    }
+
+    private DisputeRecorder.Subject subject(ServiceOrder o, Dispute.Type type, Party opener) {
+        Long respondent = opener == Party.CUSTOMER ? o.getProviderUserId() : o.getCustomerId();
+        return new DisputeRecorder.Subject(type, o.getId(), o.getRequestId(), null, null,
+                opener == Party.CUSTOMER ? Dispute.PartyRole.CUSTOMER : Dispute.PartyRole.PROVIDER, respondent);
+    }
+
+    private ServiceOrder locked(Long id) {
+        return orders.lockById(id).orElseThrow(() -> BusinessException.of(ErrorCode.ORDER_NOT_FOUND));
+    }
+
+    private Party party(ServiceOrder o, AuthUser user) {
+        if (o.getCustomerId().equals(user.id())) return Party.CUSTOMER;
+        if (o.getProviderUserId().equals(user.id())) return Party.PROVIDER;
+        throw BusinessException.of(ErrorCode.ORDER_NOT_FOUND);
+    }
+
+    private void requireParty(ServiceOrder o, AuthUser user, Party expected) {
+        if (party(o, user) != expected) {
+            throw BusinessException.forbidden();
+        }
+    }
+
+    private static void requireStatus(ServiceOrder o, ServiceOrder.Status expected) {
+        if (o.getStatus() != expected) {
+            throw BusinessException.of(ErrorCode.ORDER_INVALID_STATE);
+        }
+    }
+
+    private static void requireCash(ServiceOrder o, ServiceOrder.CashStatus expected) {
+        if (o.getCashStatus() != expected) {
+            throw BusinessException.of(ErrorCode.CASH_INVALID_STATE);
+        }
+    }
+
+    private static OrderEvent.ActorRole role(Party party) {
+        return party == Party.CUSTOMER ? OrderEvent.ActorRole.CUSTOMER : OrderEvent.ActorRole.PROVIDER;
+    }
+
+    private Instant now() {
+        return Instant.now(clock);
+    }
+
+    private void notifyCustomer(ServiceOrder o, NotificationType type, String title, String body) {
+        notifications.notify(o.getCustomerId(), type, title, body, "ORDER", o.getId());
+    }
+
+    private void notifyProvider(ServiceOrder o, NotificationType type, String title, String body) {
+        notifications.notify(o.getProviderUserId(), type, title, body, "ORDER", o.getId());
+    }
+
+    private void notifyOther(ServiceOrder o, Party actor, NotificationType type, String title, String body) {
+        if (actor == Party.CUSTOMER) notifyProvider(o, type, title, body);
+        else notifyCustomer(o, type, title, body);
+    }
+
+    private void notifyBoth(ServiceOrder o, NotificationType type, String title, String body) {
+        notifyCustomer(o, type, title, body);
+        notifyProvider(o, type, title, body);
     }
 }

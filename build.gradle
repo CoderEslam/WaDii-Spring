@@ -45,8 +45,6 @@ dependencies {
     // FCM push (OAuth access token for the FCM HTTP v1 API)
     implementation 'com.google.auth:google-auth-library-oauth2-http:1.24.1'
 
-    // agora voice/video calling — RTC token generation
-    implementation 'io.agora:authentication:2.1.3'
 
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
 

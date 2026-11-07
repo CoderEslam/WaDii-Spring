@@ -9,44 +9,51 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.EnumSet;
+import java.util.Locale;
+
 /**
- * Creates the first SUPER_ADMIN from ADMIN_EMAIL / ADMIN_PASSWORD when no account with that email exists.
- * An existing non-admin account with that email is never promoted.
+ * Creates the first super admin from {@code app.admin.email/password} when it does not exist. Admin accounts can
+ * never be created through public registration; further admins are created by a super admin.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class AdminBootstrap implements ApplicationRunner {
 
-    private final UserRepository userRepository;
+    /** Placeholder phone for the bootstrap account; staff phones are not used for business flows. */
+    private static final String BOOTSTRAP_PHONE = "00000000000";
+
+    private final UserRepository users;
     private final PasswordEncoder passwordEncoder;
 
     @Value("${app.admin.email:}")
-    private String adminEmail;
+    private String email;
 
     @Value("${app.admin.password:}")
-    private String adminPassword;
+    private String password;
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (adminEmail == null || adminEmail.isBlank() || adminPassword == null || adminPassword.isBlank()) {
+        if (email == null || email.isBlank() || password == null || password.isBlank()) {
             return;
         }
-        var existing = userRepository.findByEmailIgnoreCase(adminEmail.trim());
-        if (existing.isPresent()) {
-            if (existing.get().getRole() != Role.ADMIN) {
-                log.warn("ADMIN_EMAIL belongs to a non-admin account; it was not promoted.");
-            }
+        if (users.existsByEmailIgnoreCase(email.trim())) {
+            return;
+        }
+        if (password.length() < 12) {
+            log.warn("Bootstrap admin not created: app.admin.password must have at least 12 characters");
             return;
         }
         User admin = new User();
-        admin.setEmail(adminEmail.trim());
-        admin.setPasswordHash(passwordEncoder.encode(adminPassword));
-        admin.setFirstName("Admin");
-        admin.setRole(Role.ADMIN);
-        admin.getAdminRoles().add(AdminRole.SUPER_ADMIN);
-        userRepository.save(admin);
-        log.info("Bootstrap SUPER_ADMIN created.");
+        admin.setFullName("WaDii Super Admin");
+        admin.setEmail(email.trim().toLowerCase(Locale.ROOT));
+        admin.setPhone(BOOTSTRAP_PHONE);
+        admin.setPasswordHash(passwordEncoder.encode(password));
+        admin.setAdmin(true);
+        admin.setAdminRoles(EnumSet.of(AdminRole.SUPER_ADMIN));
+        users.save(admin);
+        log.info("Bootstrap super admin created: {}", admin.getEmail());
     }
 }

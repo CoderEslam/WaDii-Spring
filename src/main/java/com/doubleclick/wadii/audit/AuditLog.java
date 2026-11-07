@@ -1,37 +1,26 @@
 package com.doubleclick.wadii.audit;
 
 import com.doubleclick.wadii.common.persistence.BaseEntity;
-import com.doubleclick.wadii.order.ActorRole;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
-import org.hibernate.annotations.Immutable;
 
-@Entity
-@Immutable
-@Table(name = "audit_logs")
+/** Append-only record of an important or administrative action. */
 @Getter
-@Setter
+@Entity
+@Table(name = "audit_logs")
 @NoArgsConstructor
 public class AuditLog extends BaseEntity {
 
-    @Column(name = "actor_user_id")
-    private Long actorUserId;
+    @Column(name = "actor_id")
+    private Long actorId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "actor_role", nullable = false)
-    private ActorRole actorRole;
-
-    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private AuditAction action;
+    private String action;
 
-    @Column(name = "entity_type")
+    @Column(name = "entity_type", nullable = false)
     private String entityType;
 
     @Column(name = "entity_id")
@@ -39,6 +28,14 @@ public class AuditLog extends BaseEntity {
 
     private String details;
 
-    @Column(name = "ip_address")
-    private String ipAddress;
+    private String ip;
+
+    public AuditLog(Long actorId, String action, String entityType, Long entityId, String details, String ip) {
+        this.actorId = actorId;
+        this.action = action;
+        this.entityType = entityType;
+        this.entityId = entityId;
+        this.details = details;
+        this.ip = ip;
+    }
 }

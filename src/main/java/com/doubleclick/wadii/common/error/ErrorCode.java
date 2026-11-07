@@ -18,12 +18,13 @@ public enum ErrorCode {
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "This HTTP method is not supported here."),
     CONFLICT(HttpStatus.CONFLICT, "The request conflicts with the current state."),
     CONCURRENT_MODIFICATION(HttpStatus.CONFLICT, "The resource was changed by another request, please retry."),
+    RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "Too many requests, please wait and try again."),
     PAYLOAD_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "The uploaded file is too large."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error."),
 
     // ---- identity
     EMAIL_ALREADY_USED(HttpStatus.CONFLICT, "An account already exists with this email."),
-    ADMIN_REGISTRATION_FORBIDDEN(HttpStatus.FORBIDDEN, "Admin accounts cannot be created through registration."),
+    PHONE_ALREADY_USED(HttpStatus.CONFLICT, "An account already exists with this phone number."),
 
     // ---- files
     FILE_REQUIRED(HttpStatus.BAD_REQUEST, "A file is required."),
@@ -32,73 +33,62 @@ public enum ErrorCode {
 
     // ---- provider
     PROVIDER_NOT_FOUND(HttpStatus.NOT_FOUND, "Provider not found."),
-    PROVIDER_NOT_ELIGIBLE(HttpStatus.UNPROCESSABLE_ENTITY, "The provider cannot receive new orders."),
-    PROVIDER_SERVICES_MISMATCH(HttpStatus.UNPROCESSABLE_ENTITY, "The provider does not offer every requested service."),
-    PROVIDER_ALREADY_EXISTS(HttpStatus.CONFLICT, "This account already has a provider profile."),
-    PAYMENT_ACCOUNT_MISSING(HttpStatus.UNPROCESSABLE_ENTITY, "The provider has no receiving account for this payment method."),
+    PROVIDER_NOT_ACTIVE(HttpStatus.FORBIDDEN, "Provider mode is not active for this account."),
+    PROVIDER_NOT_ELIGIBLE(HttpStatus.UNPROCESSABLE_ENTITY, "The provider cannot receive this request."),
+    APPLICATION_NOT_EDITABLE(HttpStatus.CONFLICT, "The application can no longer be edited."),
+    APPLICATION_INCOMPLETE(HttpStatus.UNPROCESSABLE_ENTITY, "Add at least one service and one document before submitting."),
+    APPLICATION_INVALID_STATE(HttpStatus.CONFLICT, "The application is not in a state that allows this action."),
+    SUBSCRIPTION_RESTRICTED(HttpStatus.FORBIDDEN, "Provider activity is restricted until the subscription is settled."),
 
-    // ---- order
+    // ---- catalog
+    CATEGORY_NOT_FOUND(HttpStatus.NOT_FOUND, "Service category not found."),
+    CONFIG_INVALID(HttpStatus.UNPROCESSABLE_ENTITY, "The configuration is invalid."),
+
+    // ---- requests
+    VEHICLE_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "Vehicle details are required for the selected services."),
+    REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "Request not found."),
+    REQUEST_NOT_EDITABLE(HttpStatus.CONFLICT, "The request already has offers and can no longer be edited."),
+    REQUEST_DEADLINE_PASSED(HttpStatus.CONFLICT, "The response deadline for this request has passed."),
+    ITEM_NOT_OPEN(HttpStatus.CONFLICT, "This service item is no longer open."),
+
+    // ---- offers
+    NOT_TARGETED(HttpStatus.FORBIDDEN, "This request was not sent to you."),
+    CATEGORY_NOT_OFFERED(HttpStatus.UNPROCESSABLE_ENTITY, "You do not offer this service."),
+    OFFER_ALREADY_EXISTS(HttpStatus.CONFLICT, "You already have an active offer on this request."),
+    OFFER_NOT_FOUND(HttpStatus.NOT_FOUND, "Offer not found."),
+    OFFER_LOCKED(HttpStatus.CONFLICT, "Part of this offer was accepted, so it can no longer be changed."),
+    OFFER_NOT_PENDING(HttpStatus.CONFLICT, "Only a pending offer line can be accepted or declined."),
+    OFFER_EXPIRED(HttpStatus.CONFLICT, "This offer has expired."),
+    INVALID_EXPIRY(HttpStatus.UNPROCESSABLE_ENTITY, "The offer validity is outside the allowed range."),
+    SELF_DEALING_FORBIDDEN(HttpStatus.UNPROCESSABLE_ENTITY, "You cannot accept an offer from your own provider account."),
+
+    // ---- appointments
+    OUTSIDE_WORKING_HOURS(HttpStatus.UNPROCESSABLE_ENTITY, "The appointment is outside the branch working hours."),
+    SLOT_FULL(HttpStatus.CONFLICT, "The branch has no capacity left at this time."),
+    APPOINTMENT_IN_PAST(HttpStatus.UNPROCESSABLE_ENTITY, "The appointment time is in the past."),
+
+    // ---- orders
     ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "Order not found."),
     ORDER_INVALID_STATE(HttpStatus.CONFLICT, "The order is not in a state that allows this action."),
-    ORDER_DEADLINE_PASSED(HttpStatus.CONFLICT, "The order no longer accepts offers."),
-    ORDER_NOT_FULLY_PAID(HttpStatus.CONFLICT, "The order must be fully paid first."),
-    SELF_ORDER_FORBIDDEN(HttpStatus.UNPROCESSABLE_ENTITY, "You cannot send an order to your own provider profile."),
+    NO_SHOW_TOO_EARLY(HttpStatus.CONFLICT, "A no-show can be reported only after the appointment grace period."),
+    CASH_INVALID_STATE(HttpStatus.CONFLICT, "The cash record is not in a state that allows this action."),
+    RATING_NOT_ALLOWED(HttpStatus.CONFLICT, "You can rate only after confirming completion."),
+    RATING_ALREADY_EXISTS(HttpStatus.CONFLICT, "You already rated this order."),
 
-    // ---- response / offer
-    RESPONSE_NOT_FOUND(HttpStatus.NOT_FOUND, "Offer not found."),
-    RESPONSE_ALREADY_EXISTS(HttpStatus.CONFLICT, "You already sent an offer for this order."),
-    RESPONSE_NOT_TARGETED(HttpStatus.FORBIDDEN, "You were not invited to respond to this order."),
-    RESPONSE_NOT_PENDING(HttpStatus.CONFLICT, "Only a pending offer can be changed."),
-    OFFER_EXPIRED(HttpStatus.CONFLICT, "This offer has expired."),
-    RESPONSE_ALREADY_ACCEPTED(HttpStatus.CONFLICT, "An offer was already accepted for this order."),
-    RESPONSE_ORDER_MISMATCH(HttpStatus.BAD_REQUEST, "The offer does not belong to this order."),
-    INVALID_EXPIRY(HttpStatus.UNPROCESSABLE_ENTITY, "The offer expiry is outside the allowed range."),
-
-    // ---- appointment
-    APPOINTMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "Appointment not found."),
-    APPOINTMENT_OUTSIDE_WORKING_HOURS(HttpStatus.UNPROCESSABLE_ENTITY, "The appointment is outside the branch working hours."),
-    APPOINTMENT_IN_PAST(HttpStatus.UNPROCESSABLE_ENTITY, "The appointment time is in the past."),
-    APPOINTMENT_INVALID_STATE(HttpStatus.CONFLICT, "The appointment is not in a state that allows this action."),
-    NO_SHOW_TOO_EARLY(HttpStatus.CONFLICT, "A no-show can only be reported after the appointment time."),
-
-    // ---- policy
-    POLICY_VIOLATES_PLATFORM_RULES(HttpStatus.UNPROCESSABLE_ENTITY, "The policy weakens a mandatory platform rule."),
-
-    // ---- payment
-    PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "Payment not found."),
-    PAYMENT_INVALID_STATE(HttpStatus.CONFLICT, "The payment is not in a state that allows this action."),
-    PAYMENT_METHOD_NOT_SUPPORTED(HttpStatus.UNPROCESSABLE_ENTITY, "This payment method is not supported."),
-    PAYMENT_METHOD_REQUIRED(HttpStatus.CONFLICT, "Select a payment method first."),
-    PAYMENT_NOTHING_DUE(HttpStatus.CONFLICT, "Nothing is due on this order."),
-    PAYMENT_PROOF_LIMIT(HttpStatus.CONFLICT, "Too many proofs were uploaded for this payment."),
-    PAYMENT_PROOF_NOT_ALLOWED(HttpStatus.UNPROCESSABLE_ENTITY, "This payment method does not use proofs."),
-    REFUND_NOT_FOUND(HttpStatus.NOT_FOUND, "Refund not found."),
-    REFUND_AMOUNT_INVALID(HttpStatus.UNPROCESSABLE_ENTITY, "The refund amount exceeds the refundable amount."),
-    REFUND_INVALID_STATE(HttpStatus.CONFLICT, "The refund is not in a state that allows this action."),
-    CHARGE_NOT_FOUND(HttpStatus.NOT_FOUND, "Additional charge not found."),
-    CHARGE_INVALID_STATE(HttpStatus.CONFLICT, "The additional charge is not in a state that allows this action."),
-    INVOICE_NOT_FOUND(HttpStatus.NOT_FOUND, "Invoice not found."),
-
-    // ---- dispute / warranty / return
+    // ---- warranty / disputes
+    WARRANTY_NOT_FOUND(HttpStatus.NOT_FOUND, "Warranty not found."),
+    WARRANTY_NOT_ACTIVE(HttpStatus.CONFLICT, "The warranty is not active."),
+    CLAIM_INVALID_STATE(HttpStatus.CONFLICT, "The warranty claim is not in a state that allows this action."),
     DISPUTE_NOT_FOUND(HttpStatus.NOT_FOUND, "Dispute not found."),
     DISPUTE_INVALID_STATE(HttpStatus.CONFLICT, "The dispute is not in a state that allows this action."),
-    DISPUTE_ALREADY_OPEN(HttpStatus.CONFLICT, "An open dispute of this type already exists for this order."),
-    WARRANTY_NOT_FOUND(HttpStatus.NOT_FOUND, "Warranty not found."),
-    WARRANTY_EXPIRED(HttpStatus.CONFLICT, "The warranty period is over."),
-    WARRANTY_CLAIM_INVALID_STATE(HttpStatus.CONFLICT, "The warranty claim is not in a state that allows this action."),
-    RETURN_NOT_FOUND(HttpStatus.NOT_FOUND, "Return request not found."),
-    RETURN_INVALID_STATE(HttpStatus.CONFLICT, "The return request is not in a state that allows this action."),
-    RETURN_WINDOW_CLOSED(HttpStatus.CONFLICT, "The return period is over."),
+    DISPUTE_ALREADY_OPEN(HttpStatus.CONFLICT, "An open dispute of this type already exists."),
 
-    // ---- rating / social
-    RATING_NOT_ALLOWED(HttpStatus.CONFLICT, "You can rate a provider only after the order is completed."),
-    RATING_ALREADY_EXISTS(HttpStatus.CONFLICT, "You already rated this order."),
-    ALREADY_FOLLOWING(HttpStatus.CONFLICT, "You already follow this provider."),
-    OFFER_ALREADY_SAVED(HttpStatus.CONFLICT, "This offer is already saved."),
-
-    // ---- chat / calls
-    CONVERSATION_NOT_FOUND(HttpStatus.NOT_FOUND, "Conversation not found."),
-    CONVERSATION_CLOSED(HttpStatus.CONFLICT, "This conversation is closed.");
+    // ---- listings / finance / chat
+    LISTING_NOT_FOUND(HttpStatus.NOT_FOUND, "Listing not found."),
+    LISTING_INVALID_STATE(HttpStatus.CONFLICT, "The listing is not in a state that allows this action."),
+    LISTING_LIMIT_REACHED(HttpStatus.CONFLICT, "You reached the maximum number of active listings."),
+    LEDGER_INVALID_STATE(HttpStatus.CONFLICT, "The ledger entry is not in a state that allows this action."),
+    CONVERSATION_NOT_FOUND(HttpStatus.NOT_FOUND, "Conversation not found.");
 
     private final HttpStatus status;
     private final String defaultMessage;
