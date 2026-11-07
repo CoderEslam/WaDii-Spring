@@ -3,6 +3,7 @@ package com.doubleclick.wadii.files;
 import com.doubleclick.wadii.common.error.BusinessException;
 import com.doubleclick.wadii.common.error.ErrorCode;
 import com.doubleclick.wadii.common.security.AuthUser;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.io.Resource;
@@ -28,7 +29,7 @@ public class FileService {
     /** Resolved lazily: modules that define rules also use this service, which would otherwise be a bean cycle. */
     private final ObjectProvider<FileAccessRule> rules;
 
-    public record FileRef(String key, String contentType, long size, boolean isPublic) {
+    public record FileRef(String key, String contentType, long size, @JsonProperty("public") boolean isPublic) {
     }
 
     @Transactional

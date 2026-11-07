@@ -52,6 +52,18 @@ class SecuritySpecTest extends IntegrationTest {
     }
 
     @Test
+    void uploadResponseFollowsTheContract() {
+        Actor user = api.customer();
+        var req = MockMvcRequestBuilders.multipart("/api/v1/files")
+                .file(new MockMultipartFile("file", "p.png", "image/png", com.doubleclick.wadii.support.TestApi.PNG))
+                .param("purpose", "LISTING_PHOTO");
+        var body = api.multipartJson(req, user);
+        assertThat(body.path("data").path("public").asBoolean()).isTrue();
+        assertThat(body.path("data").path("contentType").asText()).isEqualTo("image/png");
+        assertThat(body.path("data").has("isPublic")).isFalse();
+    }
+
+    @Test
     void unattachedFilesCannotBeReusedByOtherUsers() {
         Actor owner = api.customer();
         Actor other = api.customer();

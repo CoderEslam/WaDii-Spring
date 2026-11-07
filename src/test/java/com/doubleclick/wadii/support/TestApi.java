@@ -83,6 +83,10 @@ public class TestApi {
         return exec(req, actor, null).ok().data().path("key").asText();
     }
 
+    public JsonNode multipartJson(MockHttpServletRequestBuilder req, Actor actor) {
+        return exec(req, actor, null).ok().body();
+    }
+
     public int rawStatus(MockHttpServletRequestBuilder req, Actor actor) {
         try {
             if (actor != null) req.header("Authorization", "Bearer " + actor.token());
