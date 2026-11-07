@@ -19,6 +19,7 @@ import java.util.Locale;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@org.springframework.core.annotation.Order(0)
 public class AdminBootstrap implements ApplicationRunner {
 
     /** Placeholder phone for the bootstrap account; staff phones are not used for business flows. */

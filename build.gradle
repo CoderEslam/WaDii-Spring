@@ -68,3 +68,12 @@ tasks.named('test') {
 tasks.named('bootJar') {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
+
+// Local API on an embedded PostgreSQL with demo data: ./gradlew devServer (http://localhost:8080)
+tasks.register('devServer', JavaExec) {
+    group = 'application'
+    description = 'Runs the API with the dev profile on an embedded PostgreSQL (port 54329) and demo data.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.doubleclick.wadii.DevServer'
+    jvmArgs '-Xshare:off'
+}
