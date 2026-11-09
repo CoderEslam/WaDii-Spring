@@ -37,8 +37,6 @@ public class JwtService {
         Date now = new Date();
         return Jwts.builder()
                 .setSubject(String.valueOf(user.getId()))
-                .claim("email", user.getEmail())
-                .claim("role", user.getRole().name())
                 .claim("tv", user.getTokenVersion())
                 .setIssuedAt(now)
                 .setExpiration(new Date(now.getTime() + expirationMillis))

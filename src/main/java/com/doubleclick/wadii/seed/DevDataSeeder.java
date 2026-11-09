@@ -1,131 +1,177 @@
 package com.doubleclick.wadii.seed;
 
-import com.doubleclick.wadii.catalog.CatalogService;
-import com.doubleclick.wadii.catalog.CatalogServiceRepository;
-import com.doubleclick.wadii.catalog.City;
-import com.doubleclick.wadii.catalog.CityRepository;
-import com.doubleclick.wadii.identity.Role;
+import com.doubleclick.wadii.catalog.CategoryRepository;
+import com.doubleclick.wadii.catalog.ServiceCategory;
+import com.doubleclick.wadii.common.security.AuthUser;
 import com.doubleclick.wadii.identity.User;
 import com.doubleclick.wadii.identity.UserRepository;
-import com.doubleclick.wadii.payment.PaymentMethod;
-import com.doubleclick.wadii.provider.BranchWorkingHours;
+import com.doubleclick.wadii.listing.ListingCategory;
+import com.doubleclick.wadii.listing.ListingCondition;
+import com.doubleclick.wadii.listing.Listing;
+import com.doubleclick.wadii.listing.ListingService;
+import com.doubleclick.wadii.offer.OfferService;
+import com.doubleclick.wadii.offer.OfferViews;
+import com.doubleclick.wadii.provider.BranchHours;
+import com.doubleclick.wadii.provider.BranchHoursRepository;
 import com.doubleclick.wadii.provider.Provider;
 import com.doubleclick.wadii.provider.ProviderBranch;
-import com.doubleclick.wadii.provider.ProviderPaymentAccount;
-import com.doubleclick.wadii.provider.ProviderPaymentAccountRepository;
+import com.doubleclick.wadii.provider.ProviderBranchRepository;
+import com.doubleclick.wadii.provider.ProviderCategory;
+import com.doubleclick.wadii.provider.ProviderCategoryRepository;
 import com.doubleclick.wadii.provider.ProviderRepository;
-import com.doubleclick.wadii.provider.ProviderStats;
-import com.doubleclick.wadii.provider.ProviderStatsRepository;
-import com.doubleclick.wadii.provider.VerificationStatus;
+import com.doubleclick.wadii.request.RequestService;
+import com.doubleclick.wadii.request.ServiceItem;
+import com.doubleclick.wadii.request.ServiceItemRepository;
+import com.doubleclick.wadii.request.ServiceRequest;
+import com.doubleclick.wadii.subscription.SubscriptionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalTime;
-import java.util.Base64;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
- * Development data, only with the {@code dev} profile and only on an empty user table.
- * Reference data (countries, cities, services, ...) comes from Flyway V2 and exists in every environment.
- * The shared password comes from WADII_SEED_PASSWORD or is generated randomly and printed once; there are no
- * hard-coded credentials.
+ * Demo data for local development only ({@code dev} profile). Providers are inserted already verified so the
+ * marketplace has something to show; every other step goes through the real services. All passwords: Password123.
  */
 @Slf4j
 @Component
 @Profile("dev")
+@Order(10)
 @RequiredArgsConstructor
 public class DevDataSeeder implements ApplicationRunner {
 
-    private final UserRepository userRepository;
-    private final ProviderRepository providerRepository;
-    private final ProviderStatsRepository statsRepository;
-    private final ProviderPaymentAccountRepository accountRepository;
-    private final CityRepository cityRepository;
-    private final CatalogServiceRepository serviceRepository;
-    private final PasswordEncoder passwordEncoder;
+    private static final String PASSWORD = "Password123";
 
-    @Value("${WADII_SEED_PASSWORD:}")
-    private String seedPassword;
+    private final UserRepository users;
+    private final PasswordEncoder passwordEncoder;
+    private final ProviderRepository providers;
+    private final ProviderCategoryRepository providerCategories;
+    private final ProviderBranchRepository branches;
+    private final BranchHoursRepository hours;
+    private final CategoryRepository categories;
+    private final ServiceItemRepository items;
+    private final SubscriptionService subscriptions;
+    private final RequestService requests;
+    private final OfferService offers;
+    private final ListingService listings;
+    private final Clock clock;
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (userRepository.count() > 1) return; // only the bootstrap admin may exist
-        String password = seedPassword == null || seedPassword.isBlank() ? randomPassword() : seedPassword;
-        City city = cityRepository.findAll().stream().findFirst().orElse(null);
-        List<CatalogService> services = serviceRepository.findByActiveTrueOrderByNameAsc();
-        user("customer1@wadii.dev", "Mona", "Customer", Role.USER, password, city);
-        user("customer2@wadii.dev", "Karim", "Customer", Role.USER, password, city);
-        provider("provider1@wadii.dev", "Cairo Auto Care", password, city, services, new BigDecimal("30.044420"), new BigDecimal("31.235712"));
-        provider("provider2@wadii.dev", "Giza Motors", password, city, services.subList(0, Math.min(2, services.size())),
-                new BigDecimal("30.013056"), new BigDecimal("31.208853"));
-        provider("provider3@wadii.dev", "Nasr City Garage", password, city, services, new BigDecimal("30.056000"), new BigDecimal("31.330000"));
-        log.warn("DEV seed created customer1..2@wadii.dev and provider1..3@wadii.dev with password: {}", password);
+        if (users.existsByEmailIgnoreCase("customer@wadii.dev")) {
+            return;
+        }
+        Map<String, ServiceCategory> byCode = categories.findAll().stream()
+                .collect(Collectors.toMap(ServiceCategory::getCode, Function.identity()));
+
+        User customer = user("Mona Adel", "customer@wadii.dev", "01011111111");
+        User seller = user("Karim Saleh", "seller@wadii.dev", "01022222222");
+        User p1 = user("Ahmed Fathy", "provider1@wadii.dev", "01033333333");
+        User p2 = user("Hany Morsy", "provider2@wadii.dev", "01044444444");
+        user("Sara Nabil", "provider3@wadii.dev", "01055555555");
+
+        Provider batteries = provider(p1, "Fathy Auto Electric", "Batteries, diagnostics and electrical repairs.",
+                List.of(byCode.get("BATTERIES"), byCode.get("OIL_CHANGE"), byCode.get("REPAIRS")), "Nasr City, Makram Ebeid St.");
+        Provider tires = provider(p2, "Morsy Tires & Wash", "Tires, balancing and hand car wash.",
+                List.of(byCode.get("TIRES"), byCode.get("CAR_WASH"), byCode.get("OIL_CHANGE")), "Heliopolis, El Merghany St.");
+
+        AuthUser customerAuth = auth(customer);
+        ServiceRequest request = requests.create(customerAuth, new RequestService.RequestInput(
+                new RequestService.VehicleChoice(null, "Hyundai", "Elantra", 2019, true),
+                List.of(new RequestService.ItemInput(byCode.get("BATTERIES").getId(), "Car does not start in the morning"),
+                        new RequestService.ItemInput(byCode.get("OIL_CHANGE").getId(), "Synthetic 5W-30 please")),
+                1L, "Nasr City, Abbas El Akkad", null, null, null, null, null, "Available after 4 pm", List.of(), null));
+        Map<Long, Long> itemByCategory = items.findByRequestIdOrderByIdAsc(request.getId()).stream()
+                .collect(Collectors.toMap(ServiceItem::getCategoryId, ServiceItem::getId));
+        offer(p1, batteries, request, List.of(
+                line(itemByCategory.get(byCode.get("BATTERIES").getId()), "1900", true),
+                line(itemByCategory.get(byCode.get("OIL_CHANGE").getId()), "650", false)));
+        offer(p2, tires, request, List.of(line(itemByCategory.get(byCode.get("OIL_CHANGE").getId()), "590", false)));
+
+        AuthUser sellerAuth = auth(seller);
+        var listing = listings.create(sellerAuth, new ListingService.ListingInput("Original Toyota alloy wheels (set of 4)",
+                ListingCategory.ACCESSORIES, ListingCondition.GOOD, "15 inch, minor scratches, no bends.", new BigDecimal("6500"),
+                1L, "Maadi", Listing.ContactMethod.CHAT, List.of()));
+        listings.submit(sellerAuth, listing.id());
+        listings.approve(auth(users.findByEmailIgnoreCase(adminEmail()).orElse(seller)), listing.id());
+
+        log.info("Dev data seeded: customer@wadii.dev, seller@wadii.dev, provider1..3@wadii.dev (password {})", PASSWORD);
     }
 
-    private User user(String email, String first, String last, Role role, String password, City city) {
+    private String adminEmail() {
+        return users.findAll().stream().filter(User::isAdmin).map(User::getEmail).findFirst().orElse("");
+    }
+
+    private User user(String name, String email, String phone) {
         User u = new User();
+        u.setFullName(name);
         u.setEmail(email);
-        u.setFirstName(first);
-        u.setLastName(last);
-        u.setRole(role);
-        u.setCity(city);
-        u.setPhone("+2010000000" + (userRepository.count() % 10));
-        u.setPasswordHash(passwordEncoder.encode(password));
-        return userRepository.save(u);
+        u.setPhone(phone);
+        u.setPasswordHash(passwordEncoder.encode(PASSWORD));
+        return users.save(u);
     }
 
-    private void provider(String email, String name, String password, City city, List<CatalogService> services,
-                          BigDecimal lat, BigDecimal lng) {
-        User u = user(email, name.split(" ")[0], "Owner", Role.PROVIDER, password, city);
+    private Provider provider(User owner, String name, String description, List<ServiceCategory> offered, String address) {
+        Instant now = Instant.now(clock);
         Provider p = new Provider();
-        p.setUser(u);
-        p.setName(name);
-        p.setDescription("Seeded development provider");
-        p.setVerificationStatus(VerificationStatus.VERIFIED);
-        p.setVerifiedAt(Instant.now());
-        p.getServices().addAll(services);
+        p.setUserId(owner.getId());
+        p.setBusinessName(name);
+        p.setDescription(description);
+        p.setPhone("0224000000");
+        p.setAreaId(1L);
+        p.setAddress(address);
+        p.setApplicationStatus(Provider.ApplicationStatus.VERIFIED);
+        p.setSubmittedAt(now);
+        p.setReviewedAt(now);
+        p.setVerifiedAt(now);
+        providers.save(p);
+        offered.forEach(c -> providerCategories.save(new ProviderCategory(p.getId(), c.getId())));
         ProviderBranch b = new ProviderBranch();
-        b.setProvider(p);
-        b.setName(name + " - Main");
-        b.setAddress("Cairo");
-        b.setLatitude(lat);
-        b.setLongitude(lng);
-        for (int day = 1; day <= 7; day++) {
-            if (day == 5) continue; // closed on Friday
-            BranchWorkingHours h = new BranchWorkingHours();
-            h.setBranch(b);
-            h.setDayOfWeek(day);
-            h.setOpensAt(LocalTime.of(9, 0));
-            h.setClosesAt(LocalTime.of(21, 0));
-            b.getWorkingHours().add(h);
+        b.setProviderId(p.getId());
+        b.setName("Main branch");
+        b.setAreaId(1L);
+        b.setAddress(address);
+        b.setPhone("0224000000");
+        b.setSlotMinutes(60);
+        b.setMaxBookingsPerSlot(3);
+        branches.save(b);
+        for (int day : List.of(1, 2, 3, 4, 6, 7)) {
+            hours.save(new BranchHours(b.getId(), day, LocalTime.of(9, 0), LocalTime.of(21, 0)));
         }
-        p.getBranches().add(b);
-        p = providerRepository.save(p);
-        statsRepository.save(new ProviderStats(p.getId()));
-        for (PaymentMethod m : List.of(PaymentMethod.VODAFONE_CASH, PaymentMethod.INSTAPAY)) {
-            ProviderPaymentAccount a = new ProviderPaymentAccount();
-            a.setProvider(p);
-            a.setMethod(m);
-            a.setAccountName(name);
-            a.setAccountIdentifier(m == PaymentMethod.VODAFONE_CASH ? "01000000000" : name.toLowerCase().replace(' ', '.') + "@instapay");
-            accountRepository.save(a);
-        }
+        subscriptions.ensure(p.getId());
+        return p;
     }
 
-    private static String randomPassword() {
-        byte[] bytes = new byte[12];
-        new SecureRandom().nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    private void offer(User owner, Provider provider, ServiceRequest request, List<OfferViews.LineInput> lines) {
+        Long branchId = branches.findByProviderIdOrderByIdAsc(provider.getId()).get(0).getId();
+        offers.submit(auth(owner), request.getId(), new OfferViews.OfferInput(branchId, 24, "Can start today.", lines));
+    }
+
+    private static OfferViews.LineInput line(Long itemId, String price, boolean warranty) {
+        return new OfferViews.LineInput(itemId, true, new BigDecimal(price), new BigDecimal("100"), BigDecimal.ZERO,
+                List.of(), 60, null, null,
+                warranty ? new OfferViews.Warranty(true, 365, com.doubleclick.wadii.offer.OfferLine.WarrantyCoverage.PARTS, null, null)
+                        : new OfferViews.Warranty(false, null, null, null, null));
+    }
+
+    private static AuthUser auth(User u) {
+        return new AuthUser(u.getId(), u.getEmail(), u.getFullName(), u.isAdmin(), u.isAdmin()
+                ? EnumSet.allOf(com.doubleclick.wadii.identity.AdminRole.class) : EnumSet.noneOf(com.doubleclick.wadii.identity.AdminRole.class));
     }
 }

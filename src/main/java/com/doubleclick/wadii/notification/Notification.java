@@ -12,32 +12,33 @@ import lombok.Setter;
 
 import java.time.Instant;
 
-/** Persisted inbox entry. FCM / WebSocket are only delivery channels for it. */
-@Entity
-@Table(name = "notifications")
+/** In-app inbox entry: the source of truth. Push delivery is best effort on top of it. */
 @Getter
 @Setter
+@Entity
+@Table(name = "notifications")
 @NoArgsConstructor
 public class Notification extends BaseEntity {
 
-    @Column(name = "user_id", nullable = false, updatable = false)
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, updatable = false)
+    @Column(nullable = false)
     private NotificationType type;
 
-    @Column(nullable = false, updatable = false)
+    @Column(nullable = false)
     private String title;
 
-    @Column(nullable = false, updatable = false)
+    @Column(nullable = false)
     private String body;
 
-    @Column(name = "order_id", updatable = false)
-    private Long orderId;
+    @Column(name = "ref_type")
+    private String refType;
 
-    @Column(updatable = false)
-    private String data;
+    @Column(name = "ref_id")
+    private Long refId;
 
+    @Column(name = "read_at")
     private Instant readAt;
 }

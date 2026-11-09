@@ -1,14 +1,19 @@
 package com.doubleclick.wadii.identity;
 
-/** Administrative permissions held by ADMIN accounts. SUPER_ADMIN implies every other one. */
+/** Staff sub-roles. SUPER_ADMIN implicitly holds every other role. */
 public enum AdminRole {
-    SUPER_ADMIN,
-    SUPPORT_ADMIN,
-    CONTENT_ADMIN,
-    FINANCE_ADMIN;
+    SUPER_ADMIN("ADMIN_SUPER"),
+    SUPPORT_ADMIN("ADMIN_SUPPORT"),
+    FINANCE_ADMIN("ADMIN_FINANCE"),
+    CONTENT_ADMIN("ADMIN_CONTENT");
 
-    /** Spring authority name, e.g. {@code ADMIN_FINANCE}. */
+    private final String authority;
+
+    AdminRole(String authority) {
+        this.authority = authority;
+    }
+
     public String authority() {
-        return "ADMIN_" + name().replace("_ADMIN", "");
+        return authority;
     }
 }

@@ -1,17 +1,23 @@
 package com.doubleclick.wadii.provider;
 
 import com.doubleclick.wadii.common.api.ApiResponse;
-import com.doubleclick.wadii.common.api.PageResponse;
 import com.doubleclick.wadii.common.security.AuthUser;
-import com.doubleclick.wadii.common.security.Permissions;
-import com.doubleclick.wadii.payment.PaymentMethod;
-import com.doubleclick.wadii.provider.dto.ProviderDtos.*;
+import com.doubleclick.wadii.provider.ProviderViews.ApplicationInput;
+import com.doubleclick.wadii.provider.ProviderViews.ApplicationView;
+import com.doubleclick.wadii.provider.ProviderViews.BranchInput;
+import com.doubleclick.wadii.provider.ProviderViews.BranchView;
+import com.doubleclick.wadii.provider.ProviderViews.DocumentInput;
+import com.doubleclick.wadii.provider.ProviderViews.DocumentView;
+import com.doubleclick.wadii.provider.ProviderViews.HoursRequest;
+import com.doubleclick.wadii.provider.ProviderViews.PolicyInput;
+import com.doubleclick.wadii.provider.ProviderViews.PolicyView;
+import com.doubleclick.wadii.provider.ProviderViews.ProfilePatch;
+import com.doubleclick.wadii.provider.ProviderViews.ServicesInput;
+import com.doubleclick.wadii.provider.ProviderViews.VehicleSupportRequest;
+import com.doubleclick.wadii.provider.ProviderViews.VehicleSupportView;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.Resource;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,134 +27,106 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
+/** Provider application and self-management (Provider Mode). */
 @RestController
-@RequestMapping("/api/v1/providers")
+@RequestMapping("/api/v1/provider")
 @RequiredArgsConstructor
 public class ProviderController {
 
-    private final ProviderService providerService;
+    private final ProviderService service;
+    private final ProviderAccess access;
 
-    // ---------------------------------------------------------------- browse (any authenticated user)
-
-    @GetMapping
-    public ResponseEntity<ApiResponse<PageResponse<ProviderPublicView>>> search(@RequestParam(required = false) Long serviceId,
-                                                                                @RequestParam(required = false) String q,
-                                                                                @RequestParam(required = false) Integer page,
-                                                                                @RequestParam(required = false) Integer size) {
-        return ApiResponse.ok(providerService.search(serviceId, q, page, size));
+    @GetMapping("/application")
+    public ResponseEntity<ApiResponse<ApplicationView>> application(@AuthenticationPrincipal AuthUser me) {
+        return ApiResponse.ok(service.application(me));
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<ProviderPublicView>> get(@PathVariable Long id) {
-        return ApiResponse.ok(providerService.publicProfile(id));
+    @PutMapping("/application")
+    public ResponseEntity<ApiResponse<ApplicationView>> saveApplication(@AuthenticationPrincipal AuthUser me,
+                                                                        @Valid @RequestBody ApplicationInput body) {
+        return ApiResponse.ok(service.saveApplication(me, body));
     }
 
-    // ---------------------------------------------------------------- become a provider
-
-    @PostMapping("/apply")
-    @PreAuthorize("hasRole('USER')")
-    public ResponseEntity<ApiResponse<ProviderOwnView>> apply(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody ApplyRequest request) {
-        return ApiResponse.created(providerService.apply(me, request), "Application submitted; log in again to continue as a provider");
+    @PostMapping("/application/documents")
+    public ResponseEntity<ApiResponse<DocumentView>> addDocument(@AuthenticationPrincipal AuthUser me,
+                                                                 @Valid @RequestBody DocumentInput body) {
+        return ApiResponse.created(service.addDocument(me, body), "Document added");
     }
 
-    // ---------------------------------------------------------------- own profile
-
-    @GetMapping("/me")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<ProviderOwnView>> me(@AuthenticationPrincipal AuthUser me) {
-        return ApiResponse.ok(providerService.me(me));
+    @DeleteMapping("/application/documents/{id}")
+    public ResponseEntity<ApiResponse<Void>> deleteDocument(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        service.deleteDocument(me, id);
+        return ApiResponse.ok(null);
     }
 
-    @PatchMapping("/me")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<ProviderOwnView>> update(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody UpdateProviderRequest request) {
-        return ApiResponse.ok(providerService.update(me, request), "Profile updated");
+    @PostMapping("/application/submit")
+    public ResponseEntity<ApiResponse<ApplicationView>> submit(@AuthenticationPrincipal AuthUser me) {
+        return ApiResponse.ok(service.submit(me));
     }
 
-    @PutMapping("/me/services")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<ProviderOwnView>> services(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody ServicesRequest request) {
-        return ApiResponse.ok(providerService.setServices(me, request.serviceIds()), "Services updated");
+    @GetMapping("/profile")
+    public ResponseEntity<ApiResponse<ApplicationView>> profile(@AuthenticationPrincipal AuthUser me) {
+        return ApiResponse.ok(service.applicationView(access.own(me)));
     }
 
-    @PutMapping("/me/availability")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<ProviderOwnView>> availability(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody AvailabilityRequest request) {
-        return ApiResponse.ok(providerService.setAvailability(me, request.acceptingOrders()), "Availability updated");
+    @PatchMapping("/profile")
+    public ResponseEntity<ApiResponse<ApplicationView>> patchProfile(@AuthenticationPrincipal AuthUser me,
+                                                                     @Valid @RequestBody ProfilePatch body) {
+        return ApiResponse.ok(service.patchProfile(me, body));
     }
 
-    @PutMapping("/me/links")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<ProviderOwnView>> links(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody LinksRequest request) {
-        return ApiResponse.ok(providerService.setLinks(me, request.links()), "Links updated");
+    @PutMapping("/services")
+    public ResponseEntity<ApiResponse<ApplicationView>> services(@AuthenticationPrincipal AuthUser me,
+                                                                 @Valid @RequestBody ServicesInput body) {
+        return ApiResponse.ok(service.setServices(me, body.categoryIds()));
     }
 
-    @PostMapping("/me/branches")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<BranchView>> addBranch(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody BranchRequest request) {
-        return ApiResponse.created(providerService.addBranch(me, request), "Branch created");
+    @GetMapping("/branches")
+    public ResponseEntity<ApiResponse<List<BranchView>>> branches(@AuthenticationPrincipal AuthUser me) {
+        return ApiResponse.ok(service.branches(me));
     }
 
-    @PatchMapping("/me/branches/{branchId}")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<BranchView>> updateBranch(@AuthenticationPrincipal AuthUser me, @PathVariable Long branchId,
-                                                                @Valid @RequestBody BranchRequest request) {
-        return ApiResponse.ok(providerService.updateBranch(me, branchId, request), "Branch updated");
+    @PostMapping("/branches")
+    public ResponseEntity<ApiResponse<BranchView>> createBranch(@AuthenticationPrincipal AuthUser me,
+                                                                @Valid @RequestBody BranchInput body) {
+        return ApiResponse.created(service.createBranch(me, body), "Branch created");
     }
 
-    @DeleteMapping("/me/branches/{branchId}")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<BranchView>> deactivateBranch(@AuthenticationPrincipal AuthUser me, @PathVariable Long branchId) {
-        return ApiResponse.ok(providerService.deactivateBranch(me, branchId), "Branch deactivated");
+    @PutMapping("/branches/{id}")
+    public ResponseEntity<ApiResponse<BranchView>> updateBranch(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                                                @Valid @RequestBody BranchInput body) {
+        return ApiResponse.ok(service.updateBranch(me, id, body));
     }
 
-    @GetMapping("/me/payment-accounts")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<List<PaymentAccountView>>> paymentAccounts(@AuthenticationPrincipal AuthUser me) {
-        return ApiResponse.ok(providerService.paymentAccounts(me));
+    @PutMapping("/branches/{id}/hours")
+    public ResponseEntity<ApiResponse<BranchView>> hours(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                                         @Valid @RequestBody HoursRequest body) {
+        return ApiResponse.ok(service.setHours(me, id, body.hours()));
     }
 
-    @PutMapping("/me/payment-accounts/{method}")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<PaymentAccountView>> upsertPaymentAccount(@AuthenticationPrincipal AuthUser me, @PathVariable PaymentMethod method,
-                                                                                @Valid @RequestBody PaymentAccountRequest request) {
-        return ApiResponse.ok(providerService.upsertPaymentAccount(me, method, request), "Payment account saved");
+    @GetMapping("/vehicle-support")
+    public ResponseEntity<ApiResponse<List<VehicleSupportView>>> vehicleSupport(@AuthenticationPrincipal AuthUser me) {
+        return ApiResponse.ok(service.vehicleSupport(me));
     }
 
-    @DeleteMapping("/me/payment-accounts/{method}")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<PaymentAccountView>> deactivatePaymentAccount(@AuthenticationPrincipal AuthUser me, @PathVariable PaymentMethod method) {
-        return ApiResponse.ok(providerService.deactivatePaymentAccount(me, method), "Payment account deactivated");
+    @PutMapping("/vehicle-support")
+    public ResponseEntity<ApiResponse<List<VehicleSupportView>>> setVehicleSupport(@AuthenticationPrincipal AuthUser me,
+                                                                                   @Valid @RequestBody VehicleSupportRequest body) {
+        return ApiResponse.ok(service.setVehicleSupport(me, body.items()));
     }
 
-    @PostMapping(value = "/me/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<DocumentView>> uploadDocument(@AuthenticationPrincipal AuthUser me, @RequestParam DocumentType type,
-                                                                    @RequestParam("file") MultipartFile file) {
-        return ApiResponse.created(providerService.uploadDocument(me, type, file), "Document uploaded");
+    @GetMapping("/policy")
+    public ResponseEntity<ApiResponse<PolicyView>> policy(@AuthenticationPrincipal AuthUser me) {
+        return ApiResponse.ok(service.policy(me));
     }
 
-    @GetMapping("/me/documents")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<List<DocumentView>>> documents(@AuthenticationPrincipal AuthUser me) {
-        return ApiResponse.ok(providerService.documents(me, null));
-    }
-
-    /** Owner or support admin. */
-    @GetMapping("/documents/{documentId}/file")
-    public ResponseEntity<Resource> documentFile(@AuthenticationPrincipal AuthUser me, @PathVariable Long documentId) {
-        return providerService.documentFile(me, documentId);
-    }
-
-    @GetMapping("/me/stats")
-    @PreAuthorize(Permissions.PROVIDER)
-    public ResponseEntity<ApiResponse<StatsView>> stats(@AuthenticationPrincipal AuthUser me) {
-        return ApiResponse.ok(providerService.stats(me));
+    @PutMapping("/policy")
+    public ResponseEntity<ApiResponse<PolicyView>> savePolicy(@AuthenticationPrincipal AuthUser me,
+                                                              @Valid @RequestBody PolicyInput body) {
+        return ApiResponse.ok(service.savePolicy(me, body));
     }
 }

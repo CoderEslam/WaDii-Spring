@@ -6,17 +6,15 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.util.List;
 import java.util.Optional;
 
 public interface ConversationRepository extends JpaRepository<Conversation, Long> {
 
-    Optional<Conversation> findByOrderId(Long orderId);
+    Optional<Conversation> findByKindAndRefIdAndUserAAndUserB(Conversation.Kind kind, Long refId, Long userA, Long userB);
 
-    @Query("SELECT c FROM Conversation c WHERE c.customerId = :userId OR c.providerUserId = :userId")
-    Page<Conversation> findForUser(@Param("userId") Long userId, Pageable pageable);
-
-    @Query("SELECT DISTINCT CASE WHEN c.customerId = :userId THEN c.providerUserId ELSE c.customerId END "
-            + "FROM Conversation c WHERE c.customerId = :userId OR c.providerUserId = :userId")
-    List<Long> findCounterpartIds(@Param("userId") Long userId);
+    @Query("""
+            select c from Conversation c where c.userA = :userId or c.userB = :userId
+            order by case when c.lastMessageAt is null then 1 else 0 end, c.lastMessageAt desc, c.id desc
+            """)
+    Page<Conversation> forUser(@Param("userId") Long userId, Pageable pageable);
 }

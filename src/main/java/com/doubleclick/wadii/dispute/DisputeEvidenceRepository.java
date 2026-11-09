@@ -6,5 +6,5 @@ import java.util.List;
 
 public interface DisputeEvidenceRepository extends JpaRepository<DisputeEvidence, Long> {
 
-    List<DisputeEvidence> findByDisputeIdOrderByCreatedAtAsc(Long disputeId);
+    List<DisputeEvidence> findByDisputeIdOrderByIdAsc(Long disputeId);
 }

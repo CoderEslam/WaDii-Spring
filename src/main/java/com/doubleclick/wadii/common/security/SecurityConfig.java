@@ -4,6 +4,7 @@ import com.doubleclick.wadii.common.api.ApiResponse;
 import com.doubleclick.wadii.common.error.ErrorCode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -29,6 +30,10 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtFilter;
     private final ObjectMapper objectMapper;
 
+    /** Browser origins allowed to call the API with credentials; restrictive by default (local dev client). */
+    @Value("${wadii.cors.allowed-origins:http://localhost:3005}")
+    private List<String> allowedOrigins;
+
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder(12);
@@ -37,7 +42,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
+        config.setAllowedOriginPatterns(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
@@ -53,13 +58,10 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login",
-                                "/auth/register", "/auth/login").permitAll()
-                        .requestMatchers("/ws/**", "/ws-native/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/catalog/**", "/api/v1/files/public/**",
-                                "/api/v1/advertisements/live", "/users/{filename:.+\\..+}").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/advertisements/*/impression",
-                                "/api/v1/advertisements/*/click").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/catalog/**", "/api/v1/config/public",
+                                "/api/v1/files/public/**", "/api/v1/providers/*", "/api/v1/providers/*/ratings",
+                                "/api/v1/listings", "/api/v1/listings/*").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
